@@ -2458,9 +2458,10 @@ window.CompWarga = {
           </q-card-section>
           <q-card-section>
             <div class="row q-col-gutter-sm q-mb-md">
-              <div class="col-6 col-sm-4"><div class="text-caption text-grey-6">Status Hunian</div><div class="text-weight-bold">{{ selectedKk.status_hunian }}</div></div>
-              <div class="col-6 col-sm-4"><div class="text-caption text-grey-6">Kontak HP</div><div class="text-weight-bold">{{ selectedKk.no_hp || '-' }}</div></div>
-              <div class="col-6 col-sm-4"><div class="text-caption text-grey-6">Tarif IPL / Bulan</div><div class="text-weight-bold text-teal-9">{{ formatRupiah(selectedKk.nominal_ipl) }}</div></div>
+              <div class="col-6 col-sm-3"><div class="text-caption text-grey-6">Status Hunian</div><div class="text-weight-bold">{{ selectedKk.status_hunian }}</div></div>
+              <div class="col-6 col-sm-3"><div class="text-caption text-grey-6">Kontak HP</div><div class="text-weight-bold">{{ selectedKk.no_hp || '-' }}</div></div>
+              <div class="col-6 col-sm-3"><div class="text-caption text-grey-6">Email Notifikasi</div><div class="text-weight-bold ellipsis">{{ selectedKk.email || '-' }}</div></div>
+              <div class="col-6 col-sm-3"><div class="text-caption text-grey-6">Tarif IPL / Bulan</div><div class="text-weight-bold text-teal-9">{{ formatRupiah(selectedKk.nominal_ipl) }}</div></div>
             </div>
             <div class="text-subtitle2 text-weight-bold q-mb-sm">Anggota Keluarga ({{ selectedKkMembers.length }} Orang)</div>
             <q-list bordered separator class="rounded-borders">
@@ -2499,6 +2500,7 @@ window.CompWarga = {
                 <div class="col-12 col-sm-4"><q-select v-model="kkForm.status_hunian" :options="['Tetap', 'Kontrak', 'Kosong']" outlined dense label="Status Hunian" /></div>
                 <div class="col-12 col-sm-4"><q-input v-model="kkForm.no_hp" outlined dense label="No. WhatsApp / HP" /></div>
                 <div class="col-12 col-sm-4"><q-input v-model.number="kkForm.nominal_ipl" type="number" outlined dense label="Tarif IPL (Rp)" /></div>
+                <div class="col-12 col-sm-8"><q-input v-model="kkForm.email" type="email" outlined dense label="Email Warga (Notifikasi Verifikasi IPL)" placeholder="nama@gmail.com" /></div>
                 <div class="col-12 col-sm-4"><q-select v-model="kkForm.status_aktif" :options="['Aktif', 'Nonaktif']" outlined dense label="Status Data" /></div>
               </div>
               <div class="row justify-end q-gutter-sm q-mt-md">
@@ -2643,9 +2645,9 @@ window.CompWarga = {
     }
 
     function openKkDialog(row) {
-      Object.assign(kkForm, row ? Object.assign({}, row) : {
+      Object.assign(kkForm, row ? Object.assign({ email: '' }, row) : {
         id: '', no_kk: '', kepala_keluarga: '', blok: 'A', no_rumah: '', alamat: '',
-        status_hunian: 'Tetap', no_hp: '', nominal_ipl: Number(props.settings.nominal_ipl_default || 150000), status_aktif: 'Aktif'
+        status_hunian: 'Tetap', no_hp: '', email: '', nominal_ipl: Number(props.settings.nominal_ipl_default || 150000), status_aktif: 'Aktif'
       });
       kkDialog.value = true;
     }
@@ -5210,11 +5212,14 @@ window.CompFinanceVerif = {
           catatan_bendahara: catatanBendahara.value
         });
         const cnt = (res && res.updatedCount && res.updatedCount > 1) ? (' (' + res.updatedCount + ' bulan)') : '';
+        const emailNote = (res && res.emailResult && res.emailResult.sent)
+          ? (' Notifikasi email terkirim ke ' + res.emailResult.to + '.')
+          : '';
         const msg = actionType.value === 'approve'
-          ? ('Pembayaran' + cnt + ' disetujui Lunas & otomatis tercatat di Kas Masuk!')
+          ? ('Pembayaran' + cnt + ' disetujui Lunas & otomatis tercatat di Kas Masuk!' + emailNote)
           : (actionType.value === 'revert'
             ? ('Verifikasi' + cnt + ' direvisi: dikembalikan ke status ' + revertTargetStatus.value + '.')
-            : ('Bukti' + cnt + ' ditolak. Warga dapat mengunggah ulang bukti pembayaran.'));
+            : ('Bukti' + cnt + ' ditolak. Warga dapat mengunggah ulang bukti pembayaran.' + emailNote));
         $q.notify({ type: 'positive', message: msg });
         actionDialog.value = false;
         emit('refresh-badges');
@@ -6858,7 +6863,19 @@ window.CompProfile = {
                         <template #prepend><q-icon name="chat" color="green-7" /></template>
                       </q-input>
                     </div>
-                    <div class="col-12">
+                    <div class="col-12 col-sm-6">
+                      <q-input
+                        v-model="kkForm.email"
+                        type="email"
+                        outlined dense
+                        label="Email Warga (Notifikasi Bukti Lunas)"
+                        placeholder="nama@gmail.com"
+                        hint="Menerima email otomatis saat pembayaran IPL diverifikasi"
+                      >
+                        <template #prepend><q-icon name="mail" color="teal-8" /></template>
+                      </q-input>
+                    </div>
+                    <div class="col-12 col-sm-6">
                       <q-input v-model="kkForm.alamat" outlined dense label="Alamat Lengkap" />
                     </div>
                   </template>
@@ -7012,7 +7029,7 @@ window.CompProfile = {
     const selectedWargaId = ref('');
 
     const accountForm = reactive({ nama_akun: props.user.nama || '' });
-    const kkForm = reactive({ no_kk: '', kepala_keluarga: '', no_hp: '', alamat: '', status_hunian: 'Tetap' });
+    const kkForm = reactive({ no_kk: '', kepala_keluarga: '', no_hp: '', email: '', alamat: '', status_hunian: 'Tetap' });
     const wargaForm = reactive({
       id: '', nik: '', nama_lengkap: '', jenis_kelamin: 'L', tempat_lahir: '', tanggal_lahir: '',
       hubungan_keluarga: 'Kepala Keluarga', agama: 'Islam', status_perkawinan: 'Kawin', pekerjaan: '', no_hp: ''
@@ -7040,6 +7057,7 @@ window.CompProfile = {
           no_kk: keluarga.value.no_kk || '',
           kepala_keluarga: keluarga.value.kepala_keluarga || '',
           no_hp: keluarga.value.no_hp || '',
+          email: keluarga.value.email || '',
           alamat: keluarga.value.alamat || '',
           status_hunian: keluarga.value.status_hunian === 'Kontrak' ? 'Kontrak' : 'Tetap'
         });
