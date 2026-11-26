@@ -576,7 +576,7 @@
   }
 
   const DEFAULT_MENU_CONFIG = {
-    _groups: { portal: 'PORTAL UTAMA', finance: 'SIWARGA FINANCE' },
+    _groups: { portal: 'MENU UTAMA', finance: 'SIWARGA FINANCE' },
     _permissions: { verif_revisi_roles: ['superadmin', 'admin', 'bendahara'] },
     dashboard: { enabled: true, label: 'Dashboard Utama', roles: ['superadmin', 'admin', 'bendahara', 'warga'] },
     warga: { enabled: true, label: 'Data Warga & Keluarga', roles: ['superadmin', 'admin', 'bendahara', 'warga'] },
@@ -741,7 +741,7 @@
       ],
       kegiatan: [
         { id: 'KEG-001', judul: 'Kerja Bakti Minggu Bersih Blok A & B', kategori: 'Kerja Bakti', tanggal: today, waktu_mulai: '07:00', waktu_selesai: '10:00', lokasi: 'Taman Utama & Drainase Blok A-B', deskripsi: 'Pembersihan gorong-gorong, pemangkasan dahan pohon, dan pengecatan pos ronda. Konsumsi pagi disediakan pengurus RT.', penanggung_jawab: 'Seksi Lingkungan', kuota: 40, peserta: [{ kk_id: 'KK-001', nama: 'H. Budi Santoso', no_rumah: 'A-01' }, { kk_id: 'KK-003', nama: 'Ahmad Fauzi', no_rumah: 'A-05' }], status: 'Akan Datang', created_at: now },
-        { id: 'KEG-002', judul: 'Rapat Evaluasi Keamanan & Laporan Kas Triwulan', kategori: 'Rapat RT', tanggal: today, waktu_mulai: '19:30', waktu_selesai: '21:30', lokasi: 'Balai Warga GKA', deskripsi: 'Pembahasan penambahan CCTV portal utama dan paparan laporan keuangan kas RT.', penanggung_jawab: 'Ketua & Bendahara RT', kuota: 50, peserta: [{ kk_id: 'KK-001', nama: 'H. Budi Santoso', no_rumah: 'A-01' }], status: 'Akan Datang', created_at: now }
+        { id: 'KEG-002', judul: 'Rapat Evaluasi Keamanan & Laporan Kas Triwulan', kategori: 'Rapat RT', tanggal: today, waktu_mulai: '19:30', waktu_selesai: '21:30', lokasi: 'Balai Warga GKA', deskripsi: 'Pembahasan penambahan CCTV gerbang utama dan paparan laporan keuangan kas RT.', penanggung_jawab: 'Ketua & Bendahara RT', kuota: 50, peserta: [{ kk_id: 'KK-001', nama: 'H. Budi Santoso', no_rumah: 'A-01' }], status: 'Akan Datang', created_at: now }
       ],
       pengaduan: [
         { id: 'ADU-001', kk_id: 'KK-003', pelapor_nama: 'Ahmad Fauzi', no_rumah: 'A-05', kategori: 'Fasilitas', judul: 'Lampu PJU Tikungan Blok A-05 Padam', deskripsi: 'Lampu penerangan jalan umum di pertigaan dekat rumah A-05 sudah padam sejak 2 hari lalu sehingga cukup gelap pada malam hari.', foto_url: '', prioritas: 'Tinggi', status: 'Diproses', tanggapan_rt: 'Terima kasih Pak Ahmad. Teknisi lingkungan dijadwalkan mengganti lampu LED besok sore.', ditanggapi_oleh: 'H. Budi Santoso', created_at: now, updated_at: now }
@@ -5007,7 +5007,7 @@ window.CompSettings = {
                   <q-input v-model="menuState.dashboard.label" outlined dense bg-color="white" label="Nama Menu Dashboard" />
                 </div>
                 <div class="col-12 col-sm-4">
-                  <q-input v-model="menuState._groups.portal" outlined dense bg-color="white" label="Judul Grup 1 (Portal)" />
+                  <q-input v-model="menuState._groups.portal" outlined dense bg-color="white" label="Judul Grup 1 (Menu Utama)" />
                 </div>
                 <div class="col-12 col-sm-4">
                   <q-input v-model="menuState._groups.finance" outlined dense bg-color="white" label="Judul Grup 2 (Keuangan)" />
@@ -5371,7 +5371,7 @@ window.CompSettings = {
 
     const menuGroups = [
       {
-        title: 'Portal Utama',
+        title: 'Menu Utama',
         groupKey: 'portal',
         items: [
           { key: 'warga', defaultLabel: 'Data Warga & Keluarga', icon: 'groups', desc: 'Database Kartu Keluarga (KK) dan data individu warga RT.' },
@@ -6692,7 +6692,7 @@ window.CompProfile = {
 
         function groupLabel(groupKey) {
           const g = menuConfig.value._groups || {};
-          return g[groupKey] || (groupKey === 'portal' ? 'PORTAL UTAMA' : 'SIWARGA FINANCE');
+          return g[groupKey] || (groupKey === 'portal' ? 'MENU UTAMA' : 'SIWARGA FINANCE');
         }
 
         const activeMenuTitle = computed(() => {
