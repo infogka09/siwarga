@@ -5249,7 +5249,7 @@ window.CompSettings = {
           <q-tab-panel name="users" class="q-pa-md">
             <div class="row items-center justify-between q-mb-md q-gutter-sm">
               <div class="text-caption text-grey-7">
-                Pola password awal warga: <code>Gka#&lt;NoRumah&gt;@26</code> (contoh <code>A1-09</code> → <code>Gka#A109@26</code>)
+                Pola password awal warga: <code>Gka#&lt;NoRumah&gt;@26</code> (contoh <code>A109</code> → <code>Gka#A109@26</code>)
               </div>
               <div class="row q-gutter-sm">
                 <q-btn outline color="amber-9" icon="enhanced_encryption" label="Upgrade Password Default Warga" :loading="upgradingPwds" @click="confirmUpgradeWargaPasswords" />
@@ -5635,7 +5635,7 @@ window.CompSettings = {
     function confirmUpgradeWargaPasswords() {
       $q.dialog({
         title: 'Upgrade Password Default Warga?',
-        message: 'Semua akun warga yang masih menggunakan password default lama (gka123 / warga123) akan diubah ke pola kuat unik per rumah: Gka#<NoRumah>@26 (contoh: A1-09 → Gka#A109@26). Akun warga yang sudah mengganti password pribadinya TIDAK akan berubah.',
+        message: 'Semua akun warga yang masih menggunakan password default lama (gka123 / warga123) akan diubah ke pola kuat unik per rumah: Gka#<NoRumah>@26 (contoh: A109 → Gka#A109@26). Akun warga yang sudah mengganti password pribadinya TIDAK akan berubah.',
         cancel: { label: 'Batal', flat: true },
         ok: { label: 'Ya, Upgrade Sekarang', color: 'amber-9', unelevated: true },
         persistent: true
@@ -6193,7 +6193,7 @@ window.CompProfile = {
 
             <div class="text-h5 text-weight-bolder text-grey-9 leading-tight">Masuk ke Akun Anda</div>
             <div class="text-body2 text-grey-6 q-mt-xs q-mb-lg">
-              Silakan masukkan nomor rumah (contoh: <strong>A1-09</strong>) atau username pengurus.
+              Silakan masukkan nomor rumah (contoh: <strong>A109</strong>) atau username pengurus.
             </div>
 
             <q-form @submit.prevent="handleLogin" class="q-gutter-md">
@@ -6201,7 +6201,7 @@ window.CompProfile = {
                 <div class="text-caption text-weight-bold text-grey-8 q-mb-xs">Username / Nomor Rumah</div>
                 <q-input
                   v-model.trim="loginForm.username"
-                  placeholder="Contoh: A1-09 atau admin"
+                  placeholder="Contoh: A109 atau admin"
                   outlined
                   clearable
                   bg-color="grey-1"
@@ -6273,7 +6273,7 @@ window.CompProfile = {
           <q-card-section class="q-gutter-sm text-body2 text-grey-8">
             <div class="row items-start no-wrap q-gutter-sm">
               <q-icon name="looks_one" color="teal-8" size="22px" />
-              <div><strong>Username Warga:</strong> gunakan nomor rumah Anda sesuai data RT (contoh: <code>A1-09</code>, <code>B2-03</code>, atau <code>G15</code>).</div>
+              <div><strong>Username Warga:</strong> gunakan nomor rumah Anda sesuai data RT (contoh: <code>A109</code>, <code>B203</code>, atau <code>G15</code>).</div>
             </div>
             <div class="row items-start no-wrap q-gutter-sm">
               <q-icon name="looks_two" color="teal-8" size="22px" />
