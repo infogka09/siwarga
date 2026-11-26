@@ -571,6 +571,33 @@
     return out;
   }
 
+  function formatPeriodsSummary(periods, includeCount) {
+    const list = Array.isArray(periods) ? periods.slice().sort() : [];
+    if (!list.length) return '-';
+    if (list.length === 1) return formatPeriodeID(list[0]);
+    function nextYm(ym) {
+      const p = ym.split('-');
+      let y = parseInt(p[0], 10);
+      let m = parseInt(p[1], 10) + 1;
+      if (m > 12) { m = 1; y++; }
+      return y + '-' + (m < 10 ? '0' + m : String(m));
+    }
+    const runs = [];
+    let start = list[0];
+    let prev = list[0];
+    for (let i = 1; i < list.length; i++) {
+      if (list[i] === nextYm(prev)) {
+        prev = list[i];
+      } else {
+        runs.push(start === prev ? formatPeriodeID(start) : (formatPeriodeID(start) + ' s/d ' + formatPeriodeID(prev)));
+        start = list[i];
+        prev = list[i];
+      }
+    }
+    runs.push(start === prev ? formatPeriodeID(start) : (formatPeriodeID(start) + ' s/d ' + formatPeriodeID(prev)));
+    return includeCount === false ? runs.join(', ') : (runs.join(', ') + ' (' + list.length + ' bln)');
+  }
+
   function currentPeriodeClient() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -1422,8 +1449,18 @@
         const targetKkId = isStaff ? String(payload.kk_id || '') : String(u.kk_id || '');
         const kk = db.keluarga.find(function (k) { return String(k.id) === targetKkId; });
         if (!kk) throw new Error('Data Kartu Keluarga tidak ditemukan.');
-        const periods = expandPeriodeRange(payload.periode_mulai, payload.periode_selesai);
-        if (!periods.length) throw new Error('Rentang periode mulai & selesai tidak valid.');
+        let periods = [];
+        if (Array.isArray(payload.periods) && payload.periods.length) {
+          const seen = {};
+          payload.periods.forEach(function (ym) {
+            const s = String(ym || '').trim();
+            if (/^\d{4}-\d{2}$/.test(s) && !seen[s]) { seen[s] = true; periods.push(s); }
+          });
+          periods.sort();
+        } else {
+          periods = expandPeriodeRange(payload.periode_mulai, payload.periode_selesai);
+        }
+        if (!periods.length) throw new Error('Pilih minimal 1 periode bulan pembayaran.');
         const defNom = Number(kk.nominal_ipl || db.settings.nominal_ipl_default || 150000);
         const nomBulan = (isStaff && Number(payload.nominal_per_bulan) > 0) ? Number(payload.nominal_per_bulan) : defNom;
         const metode = payload.metode_bayar || 'Transfer Bank';
@@ -1442,9 +1479,7 @@
         });
         if (!payable.length) throw new Error('Semua bulan pada rentang tersebut sudah berstatus Lunas.');
         const batchId = mockId('RPL');
-        const rangeText = payable.length > 1
-          ? (formatPeriodeID(payable[0].ym) + ' s/d ' + formatPeriodeID(payable[payable.length - 1].ym) + ' (' + payable.length + ' bln)')
-          : formatPeriodeID(payable[0].ym);
+        const rangeText = formatPeriodsSummary(payable.map(function (p) { return p.ym; }), true);
         let grandTotal = 0;
         payable.forEach(function (p) { grandTotal += p.ex ? Number(p.ex.total || p.ex.nominal || nomBulan) : nomBulan; });
         let kasId = '';
@@ -1506,10 +1541,10 @@
           targets.sort(function (a, b) { return String(a.periode).localeCompare(String(b.periode)); });
           let grandTotal = 0;
           targets.forEach(function (x) { grandTotal += Number(x.total || x.nominal || 0); });
-          const first = targets[0], last = targets[targets.length - 1];
+          const first = targets[0];
           const rekSuffix = first.rekening_tujuan ? (' [' + first.rekening_tujuan + ']') : '';
           const desk = targets.length > 1
-            ? ('Pembayaran IPL Rapel ' + formatPeriodeID(first.periode) + ' s/d ' + formatPeriodeID(last.periode) + ' (' + targets.length + ' bln) - Rumah ' + first.no_rumah + ' (' + first.kepala_keluarga + ')' + rekSuffix)
+            ? ('Pembayaran IPL Rapel ' + formatPeriodsSummary(targets.map(function (x) { return x.periode; }), true) + ' - Rumah ' + first.no_rumah + ' (' + first.kepala_keluarga + ')' + rekSuffix)
             : ('Pembayaran IPL ' + formatPeriodeID(first.periode) + ' - Rumah ' + first.no_rumah + ' (' + first.kepala_keluarga + ')' + rekSuffix);
           const kasObj = {
             id: mockId('KAS'), tanggal: today, tipe: 'Masuk', kategori: 'IPL Bulanan',
@@ -1735,6 +1770,7 @@
     formatPeriodeID: formatPeriodeID,
     buildPeriodeOptions: buildPeriodeOptions,
     expandPeriodeRange: expandPeriodeRange,
+    formatPeriodsSummary: formatPeriodsSummary,
     currentPeriode: currentPeriodeClient,
     readFileAsPayload: readFileAsPayload,
     call: function (action, payload) {
@@ -3686,48 +3722,104 @@ window.CompFinanceIpl = {
                 <q-badge color="deep-purple-7" class="q-pa-xs">{{ formatRupiah(rapelForm.nominal_per_bulan) }} / bln</q-badge>
               </div>
 
-              <!-- Rentang Periode -->
-              <div class="row q-col-gutter-sm">
-                <div class="col-12 col-sm-6">
-                  <q-select
-                    v-model="rapelForm.periode_mulai"
-                    :options="periodeRapelOptions"
-                    option-value="value"
-                    option-label="label"
-                    emit-value
-                    map-options
-                    outlined dense
-                    label="Dari Bulan (MM-YYYY) *"
-                  />
-                </div>
-                <div class="col-12 col-sm-6">
-                  <q-select
-                    v-model="rapelForm.periode_selesai"
-                    :options="periodeRapelOptions"
-                    option-value="value"
-                    option-label="label"
-                    emit-value
-                    map-options
-                    outlined dense
-                    label="Sampai Bulan (MM-YYYY) *"
-                  />
-                </div>
+              <!-- Pilih Mode Periode: Rentang Berurutan vs Pilih Bulan Bebas (Lompat) -->
+              <div class="q-mt-xs">
+                <q-btn-toggle
+                  v-model="rapelForm.mode"
+                  spread
+                  no-caps
+                  unelevated
+                  dense
+                  toggle-color="deep-purple-7"
+                  color="grey-2"
+                  text-color="grey-8"
+                  :options="[
+                    { label: 'Rentang Berurutan (s/d)', value: 'range', icon: 'date_range' },
+                    { label: 'Pilih Bulan Bebas (Lompat)', value: 'custom', icon: 'checklist' }
+                  ]"
+                />
               </div>
 
-              <!-- Tombol Pintas Sampai Bulan Berjalan / Akhir Tahun -->
-              <div class="row items-center q-gutter-xs">
-                <span class="text-caption text-grey-7 q-mr-xs">Pintasan cepat:</span>
-                <q-btn
-                  outline dense no-caps size="sm" color="teal-8" icon="today"
-                  :label="'s/d Bulan Berjalan (' + formatPeriodeID(currentYm) + ')'"
-                  @click="setRapelEndCurrent"
-                />
-                <q-btn
-                  outline dense no-caps size="sm" color="deep-purple-7" icon="event_available"
-                  :label="'s/d Akhir Tahun (12-' + currentYear + ')'"
-                  @click="setRapelEndYear"
-                />
-              </div>
+              <!-- Mode 1: Rentang Periode Berurutan -->
+              <template v-if="rapelForm.mode === 'range'">
+                <div class="row q-col-gutter-sm">
+                  <div class="col-12 col-sm-6">
+                    <q-select
+                      v-model="rapelForm.periode_mulai"
+                      :options="periodeRapelOptions"
+                      option-value="value"
+                      option-label="label"
+                      emit-value
+                      map-options
+                      outlined dense
+                      label="Dari Bulan (MM-YYYY) *"
+                    />
+                  </div>
+                  <div class="col-12 col-sm-6">
+                    <q-select
+                      v-model="rapelForm.periode_selesai"
+                      :options="periodeRapelOptions"
+                      option-value="value"
+                      option-label="label"
+                      emit-value
+                      map-options
+                      outlined dense
+                      label="Sampai Bulan (MM-YYYY) *"
+                    />
+                  </div>
+                </div>
+
+                <!-- Tombol Pintas Sampai Bulan Berjalan / Akhir Tahun -->
+                <div class="row items-center q-gutter-xs">
+                  <span class="text-caption text-grey-7 q-mr-xs">Pintasan cepat:</span>
+                  <q-btn
+                    outline dense no-caps size="sm" color="teal-8" icon="today"
+                    :label="'s/d Bulan Berjalan (' + formatPeriodeID(currentYm) + ')'"
+                    @click="setRapelEndCurrent"
+                  />
+                  <q-btn
+                    outline dense no-caps size="sm" color="deep-purple-7" icon="event_available"
+                    :label="'s/d Akhir Tahun (12-' + currentYear + ')'"
+                    @click="setRapelEndYear"
+                  />
+                </div>
+              </template>
+
+              <!-- Mode 2: Pilih Bulan Bebas / Lompat (misal: 03-2025, 10-2026, 11-2026) -->
+              <template v-else>
+                <q-select
+                  v-model="rapelForm.custom_periods"
+                  :options="filteredRapelPeriodeOptions"
+                  option-value="value"
+                  option-label="label"
+                  emit-value
+                  map-options
+                  multiple
+                  use-chips
+                  use-input
+                  input-debounce="0"
+                  @filter="filterRapelPeriodeSelect"
+                  outlined dense
+                  label="Pilih Bulan yang Dibayar (bisa lompat bulan/tahun) *"
+                  hint="Ketik bulan/tahun lalu klik untuk menambah, contoh: 03-2025, 10-2026, 11-2026"
+                >
+                  <template #prepend><q-icon name="checklist" color="deep-purple-7" /></template>
+                </q-select>
+                <div class="row items-center q-gutter-xs">
+                  <span class="text-caption text-grey-7 q-mr-xs">Pintasan cepat:</span>
+                  <q-btn
+                    outline dense no-caps size="sm" color="teal-8" icon="playlist_add"
+                    label="+ Tambah Semua Tunggakan"
+                    @click="addAllUnpaidToCustom"
+                  />
+                  <q-btn
+                    v-if="rapelForm.custom_periods.length"
+                    flat dense no-caps size="sm" color="negative" icon="clear_all"
+                    label="Kosongkan"
+                    @click="rapelForm.custom_periods = []"
+                  />
+                </div>
+              </template>
 
               <q-input
                 v-if="canManage"
@@ -3741,7 +3833,8 @@ window.CompFinanceIpl = {
               <!-- Ringkasan Kalkulasi Rapel Live -->
               <div class="q-pa-md rounded-borders" style="background:#f0fdfa; border: 1px solid #99f6e4;">
                 <div v-if="rapelPreview.invalid" class="text-negative text-caption text-weight-bold">
-                  <q-icon name="error_outline" class="q-mr-xs" />Periode "Dari Bulan" tidak boleh melebihi "Sampai Bulan".
+                  <q-icon name="error_outline" class="q-mr-xs" />
+                  {{ rapelForm.mode === 'custom' ? 'Silakan pilih minimal 1 bulan yang akan dibayar.' : 'Periode "Dari Bulan" tidak boleh melebihi "Sampai Bulan".' }}
                 </div>
                 <template v-else>
                   <div class="row items-center justify-between q-mb-xs">
@@ -3751,6 +3844,9 @@ window.CompFinanceIpl = {
                     <div class="text-h6 text-weight-bolder text-teal-9 mono-num">
                       {{ formatRupiah(rapelPreview.grandTotal) }}
                     </div>
+                  </div>
+                  <div v-if="rapelPreview.payable.length" class="text-caption text-teal-9 q-mb-xs">
+                    Ringkasan: <strong>{{ formatPeriodsSummary(rapelPreview.payable, false) }}</strong>
                   </div>
                   <div v-if="rapelPreview.skippedLunas.length" class="text-caption text-positive q-mb-xs">
                     <q-icon name="check_circle" size="14px" class="q-mr-xs" />
@@ -4087,10 +4183,13 @@ window.CompFinanceIpl = {
     const allHouseBills = ref([]);
     const rapelFile = ref(null);
     const rapelPreviewDataUrl = ref('');
+    const rapelPeriodeFilter = ref('');
     const rapelForm = reactive({
+      mode: 'range',
       kk_id: '',
       periode_mulai: currentYm,
       periode_selesai: currentYear + '-12',
+      custom_periods: [],
       nominal_per_bulan: 150000,
       metode_bayar: 'Transfer Bank',
       rekening_tujuan: '',
@@ -4183,13 +4282,32 @@ window.CompFinanceIpl = {
       return kkOptions.value.filter(o => o.label.toLowerCase().includes(q));
     });
 
+    const filteredRapelPeriodeOptions = computed(() => {
+      const q = (rapelPeriodeFilter.value || '').toLowerCase();
+      if (!q) return periodeRapelOptions;
+      return periodeRapelOptions.filter(o => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+    });
+
     const rapelPreview = computed(() => {
-      const s = rapelForm.periode_mulai;
-      const e = rapelForm.periode_selesai;
-      if (!s || !e || s > e) {
-        return { invalid: true, months: [], payable: [], skippedLunas: [], grandTotal: 0 };
+      let range = [];
+      if (rapelForm.mode === 'custom') {
+        const seen = {};
+        (rapelForm.custom_periods || []).forEach(ym => {
+          const s = String(ym || '').trim();
+          if (/^\d{4}-\d{2}$/.test(s) && !seen[s]) { seen[s] = true; range.push(s); }
+        });
+        range.sort();
+        if (!range.length) {
+          return { invalid: true, months: [], payable: [], skippedLunas: [], grandTotal: 0 };
+        }
+      } else {
+        const s = rapelForm.periode_mulai;
+        const e = rapelForm.periode_selesai;
+        if (!s || !e || s > e) {
+          return { invalid: true, months: [], payable: [], skippedLunas: [], grandTotal: 0 };
+        }
+        range = SiwargaAPI.expandPeriodeRange(s, e);
       }
-      const range = SiwargaAPI.expandPeriodeRange(s, e);
       const targetKkId = canManage.value ? String(rapelForm.kk_id || '') : String(props.user.kk_id || '');
       const existingMap = {};
       allHouseBills.value.forEach(b => {
@@ -4303,6 +4421,26 @@ window.CompFinanceIpl = {
       update(() => { kkSearchFilter.value = val || ''; });
     }
 
+    function filterRapelPeriodeSelect(val, update) {
+      update(() => { rapelPeriodeFilter.value = val || ''; });
+    }
+
+    function addAllUnpaidToCustom() {
+      const targetKkId = canManage.value ? String(rapelForm.kk_id || '') : String(props.user.kk_id || '');
+      if (!targetKkId) {
+        $q.notify({ type: 'warning', message: 'Pilih rumah warga terlebih dahulu.' });
+        return;
+      }
+      const unpaid = allHouseBills.value
+        .filter(b => String(b.kk_id) === targetKkId && (b.status === 'Belum Bayar' || b.status === 'Ditolak') && b.periode)
+        .map(b => String(b.periode));
+      const merged = Array.from(new Set((rapelForm.custom_periods || []).concat(unpaid))).sort();
+      rapelForm.custom_periods = merged;
+      if (!unpaid.length) {
+        $q.notify({ type: 'info', message: 'Tidak ada tunggakan tercatat di sistem untuk rumah ini. Anda tetap bisa memilih bulan secara manual.' });
+      }
+    }
+
     function onSelectRapelKk(kkId) {
       const found = kkList.value.find(k => String(k.id) === String(kkId));
       if (found) {
@@ -4333,6 +4471,8 @@ window.CompFinanceIpl = {
     async function openRapelDialog() {
       rapelFile.value = null;
       rapelPreviewDataUrl.value = '';
+      rapelForm.mode = 'range';
+      rapelForm.custom_periods = [];
       rapelForm.metode_bayar = 'Transfer Bank';
       rapelForm.rekening_tujuan = bankSelectOptions.value[0] ? bankSelectOptions.value[0].value : '';
       rapelForm.catatan_warga = '';
@@ -4394,8 +4534,9 @@ window.CompFinanceIpl = {
         }
         const res = await SiwargaAPI.call('submitRapelIpl', {
           kk_id: rapelForm.kk_id,
-          periode_mulai: rapelForm.periode_mulai,
-          periode_selesai: rapelForm.periode_selesai,
+          periode_mulai: rapelForm.mode === 'range' ? rapelForm.periode_mulai : '',
+          periode_selesai: rapelForm.mode === 'range' ? rapelForm.periode_selesai : '',
+          periods: rapelForm.mode === 'custom' ? rapelPreview.value.payable.slice() : [],
           nominal_per_bulan: rapelForm.nominal_per_bulan,
           metode_bayar: rapelForm.metode_bayar,
           rekening_tujuan: rapelForm.rekening_tujuan,
@@ -4540,16 +4681,16 @@ window.CompFinanceIpl = {
 
     return {
       canManage, loading, saving, filterPeriode, filterStatus, search,
-      columns, periodeFilterOptions, periodeGenerateOptions, periodeRapelOptions, filteredRows, unpaidRows, activeBankAccounts, bankSelectOptions, selectedUploadBank, selectedRapelBank, summary, genDialog, genForm,
+      columns, periodeFilterOptions, periodeGenerateOptions, periodeRapelOptions, filteredRapelPeriodeOptions, filteredRows, unpaidRows, activeBankAccounts, bankSelectOptions, selectedUploadBank, selectedRapelBank, summary, genDialog, genForm,
       uploadDialog, selectedBill, uploadFile, uploadPreviewDataUrl, uploadForm,
       currentYm, currentYear, rapelDialog, loadingKk, filteredKkOptions, rapelFile, rapelPreviewDataUrl, rapelForm, rapelPreview,
       proofDialog, proofItem, sendingSingleId, waBulkDialog, selectedWaIds, waBulkTemplate,
       sendingBulkWa, waBulkResult, waLogDialog, loadingLogs, waLogs, waLogColumns,
       statusColor, loadData, openGenerateDialog, submitGenerate,
-      openUploadDialog, onPickFile, submitUpload, openRapelDialog, filterKkSelect, onSelectRapelKk, setRapelEndCurrent, setRapelEndYear, onPickRapelFile, submitRapel,
+      openUploadDialog, onPickFile, submitUpload, openRapelDialog, filterKkSelect, filterRapelPeriodeSelect, addAllUnpaidToCustom, onSelectRapelKk, setRapelEndCurrent, setRapelEndYear, onPickRapelFile, submitRapel,
       openProofPreview, copyRekening,
       buildWaMeLink, sendSingleWa, openWaBulkDialog, selectAllWa, submitWaBulk, openWaLogDialog,
-      formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
+      formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID, formatPeriodsSummary: SiwargaAPI.formatPeriodsSummary
     };
   }
 };
@@ -4804,13 +4945,14 @@ window.CompFinanceVerif = {
           const first = list[0];
           const last = list[list.length - 1];
           const totalSum = list.reduce((s, x) => s + Number(x.total || x.nominal || 0), 0);
+          const periods = list.map(x => x.periode);
           cards.push(Object.assign({}, first, {
             cardKey: 'BATCH-' + bid,
             isBatch: true,
             batch_id: bid,
             count: list.length,
-            periods: list.map(x => x.periode),
-            periodeLabel: SiwargaAPI.formatPeriodeID(first.periode) + ' s/d ' + SiwargaAPI.formatPeriodeID(last.periode),
+            periods: periods,
+            periodeLabel: SiwargaAPI.formatPeriodsSummary(periods, false),
             total: totalSum
           }));
         }
