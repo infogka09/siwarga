@@ -5744,14 +5744,17 @@ window.CompFinanceReport = {
   props: ['user', 'settings'],
   template: `
     <div>
-      <div class="row items-center justify-between q-mb-md q-gutter-sm no-print">
-        <div>
-          <div class="text-h6 text-weight-bold text-grey-9">Buku Kas &amp; Laporan Keuangan RT</div>
-          <div class="text-caption text-grey-6">Buku Kas Umum dengan saldo berjalan (running balance), rekap per pos kategori, ekspor CSV, dan cetak laporan</div>
+      <div class="row items-center justify-between q-mb-md q-col-gutter-sm no-print">
+        <div class="col-12 col-md-auto">
+          <div class="text-subtitle1 text-md-h6 text-weight-bold text-grey-9">Buku Kas &amp; Laporan Keuangan RT</div>
+          <div class="text-caption text-grey-6">Buku Kas Umum dengan saldo berjalan (running balance), rekap per pos kategori, ekspor PDF/CSV, dan cetak laporan</div>
         </div>
-        <div class="row q-gutter-sm">
-          <q-btn outline color="teal-8" icon="download" label="Export CSV" @click="exportCsv" />
-          <q-btn unelevated color="teal-8" icon="print" label="Cetak Laporan" @click="printReport" />
+        <div class="col-12 col-md-auto">
+          <div class="row q-gutter-xs q-gutter-sm-sm">
+            <q-btn unelevated color="red-7" icon="picture_as_pdf" label="Export PDF" :loading="exportingPdf" @click="exportPdf" />
+            <q-btn outline color="teal-8" icon="download" label="Export CSV" @click="exportCsv" />
+            <q-btn outline color="grey-8" icon="print" label="Cetak" @click="printReport" />
+          </div>
         </div>
       </div>
 
@@ -5961,10 +5964,11 @@ window.CompFinanceReport = {
       </q-card>
     </div>
   `,
-  setup() {
+  setup(props) {
     const { ref, reactive, onMounted } = Vue;
     const $q = Quasar.useQuasar();
     const loading = ref(false);
+    const exportingPdf = ref(false);
     const filters = reactive({ startDate: '', endDate: '' });
     const report = reactive({
       saldoAwalPeriode: 0, totalMasuk: 0, totalKeluar: 0, surplusDefisit: 0, saldoAkhir: 0,
@@ -6002,6 +6006,235 @@ window.CompFinanceReport = {
       window.print();
     }
 
+    function loadExternalScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[src="' + src + '"]');
+        if (existing) {
+          if (existing.getAttribute('data-loaded') === 'true') return resolve();
+          existing.addEventListener('load', () => resolve());
+          existing.addEventListener('error', () => reject(new Error('Gagal memuat library PDF.')));
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = () => { s.setAttribute('data-loaded', 'true'); resolve(); };
+        s.onerror = () => reject(new Error('Gagal memuat library PDF. Pastikan koneksi internet aktif.'));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function ensureJsPdf() {
+      if (!(window.jspdf && window.jspdf.jsPDF)) {
+        await loadExternalScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+      }
+      if (!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable)) {
+        await loadExternalScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js');
+      }
+      if (!(window.jspdf && window.jspdf.jsPDF)) {
+        throw new Error('Library jsPDF tidak tersedia.');
+      }
+      return window.jspdf.jsPDF;
+    }
+
+    async function exportPdf() {
+      exportingPdf.value = true;
+      try {
+        const jsPDF = await ensureJsPdf();
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const margin = 14;
+        const contentW = pageW - margin * 2;
+        const cfg = props.settings || {};
+        const usr = props.user || {};
+
+        const namaRt = cfg.nama_rt || 'RT 009 / RW 004';
+        const namaLingk = cfg.nama_lingkungan || 'Perumahan Griya Kedaung Asri';
+        const kelKota = [cfg.kelurahan, cfg.kota].filter(Boolean).join(', ');
+        const periodeLabel =
+          (filters.startDate ? SiwargaAPI.formatDateID(filters.startDate) : 'Awal Pembukuan') +
+          ' s/d ' +
+          (filters.endDate ? SiwargaAPI.formatDateID(filters.endDate) : 'Hari Ini');
+        const nowD = new Date();
+        const todayStr =
+          String(nowD.getDate()).padStart(2, '0') + '-' +
+          String(nowD.getMonth() + 1).padStart(2, '0') + '-' +
+          nowD.getFullYear();
+
+        // Header Kop Resmi
+        doc.setFillColor(15, 118, 110);
+        doc.rect(margin, 12, contentW, 22, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.text('LAPORAN BUKU KAS KEUANGAN ' + String(namaRt).toUpperCase(), pageW / 2, 20, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.text(namaLingk + (kelKota ? (' · ' + kelKota) : ''), pageW / 2, 26, { align: 'center' });
+        doc.setFontSize(8.5);
+        doc.text('Periode: ' + periodeLabel + '   |   Diunduh: ' + todayStr + (usr.nama ? (' oleh ' + usr.nama) : ''), pageW / 2, 31, { align: 'center' });
+
+        // 4 Kartu Ringkasan Saldo
+        const boxY = 38;
+        const gap = 3;
+        const boxW = (contentW - gap * 3) / 4;
+        const boxH = 15;
+        const boxes = [
+          { label: 'Saldo Awal Periode', val: SiwargaAPI.formatRupiah(report.saldoAwalPeriode), bg: [241, 245, 249], txt: [30, 41, 59] },
+          { label: 'Total Penerimaan', val: '+ ' + SiwargaAPI.formatRupiah(report.totalMasuk), bg: [236, 253, 245], txt: [21, 128, 61] },
+          { label: 'Total Pengeluaran', val: '- ' + SiwargaAPI.formatRupiah(report.totalKeluar), bg: [255, 247, 237], txt: [194, 65, 12] },
+          { label: 'Saldo Akhir Kas', val: SiwargaAPI.formatRupiah(report.saldoAkhir), bg: [240, 253, 250], txt: [15, 118, 110] }
+        ];
+        boxes.forEach((b, i) => {
+          const bx = margin + i * (boxW + gap);
+          doc.setFillColor(b.bg[0], b.bg[1], b.bg[2]);
+          doc.setDrawColor(203, 213, 225);
+          doc.roundedRect(bx, boxY, boxW, boxH, 2, 2, 'FD');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text(b.label, bx + 3, boxY + 5.2);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9.5);
+          doc.setTextColor(b.txt[0], b.txt[1], b.txt[2]);
+          doc.text(b.val, bx + 3, boxY + 11.5);
+        });
+
+        // Judul Tabel Buku Kas Umum
+        let curY = boxY + boxH + 7;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Buku Kas Umum (Mutasi & Saldo Berjalan)', margin, curY);
+
+        const bodyRows = [
+          [
+            { content: 'Saldo Awal Periode', colSpan: 6, styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [30, 41, 59] } },
+            { content: SiwargaAPI.formatRupiah(report.saldoAwalPeriode), styles: { halign: 'right', fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [30, 41, 59] } }
+          ]
+        ];
+        (report.ledger || []).forEach((r, idx) => {
+          bodyRows.push([
+            String(idx + 1),
+            SiwargaAPI.formatDateID(r.tanggal),
+            r.kategori || '-',
+            r.deskripsi || '-',
+            r.debit > 0 ? SiwargaAPI.formatRupiah(r.debit) : '-',
+            r.kredit > 0 ? SiwargaAPI.formatRupiah(r.kredit) : '-',
+            SiwargaAPI.formatRupiah(r.saldo_berjalan)
+          ]);
+        });
+        bodyRows.push([
+          { content: 'TOTAL MUTASI & SALDO AKHIR', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [204, 251, 241], textColor: [17, 94, 89] } },
+          { content: SiwargaAPI.formatRupiah(report.totalMasuk), styles: { halign: 'right', fontStyle: 'bold', fillColor: [204, 251, 241], textColor: [21, 128, 61] } },
+          { content: SiwargaAPI.formatRupiah(report.totalKeluar), styles: { halign: 'right', fontStyle: 'bold', fillColor: [204, 251, 241], textColor: [185, 28, 28] } },
+          { content: SiwargaAPI.formatRupiah(report.saldoAkhir), styles: { halign: 'right', fontStyle: 'bold', fillColor: [204, 251, 241], textColor: [17, 94, 89] } }
+        ]);
+
+        doc.autoTable({
+          startY: curY + 2.5,
+          margin: { left: margin, right: margin, bottom: 16 },
+          head: [['No', 'Tanggal', 'Kategori', 'Uraian Transaksi', 'Masuk (Debit)', 'Keluar (Kredit)', 'Saldo Berjalan']],
+          body: bodyRows,
+          theme: 'grid',
+          styles: { fontSize: 8, cellPadding: 2.2, textColor: [30, 41, 59], lineColor: [203, 213, 225], lineWidth: 0.2 },
+          headStyles: { fillColor: [15, 118, 110], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+          columnStyles: {
+            0: { cellWidth: 9, halign: 'center' },
+            1: { cellWidth: 21, halign: 'center' },
+            2: { cellWidth: 28 },
+            3: { cellWidth: 'auto' },
+            4: { cellWidth: 25, halign: 'right' },
+            5: { cellWidth: 25, halign: 'right' },
+            6: { cellWidth: 27, halign: 'right', fontStyle: 'bold' }
+          }
+        });
+
+        // Rekap per Kategori
+        curY = doc.lastAutoTable.finalY + 8;
+        if (curY > pageH - 55) {
+          doc.addPage();
+          curY = 18;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Rekap Pemasukan & Pengeluaran per Kategori', margin, curY);
+
+        const katRows = [];
+        Object.keys(report.perKategoriMasuk || {}).forEach(cat => {
+          katRows.push(['Pemasukan', cat, SiwargaAPI.formatRupiah(report.perKategoriMasuk[cat])]);
+        });
+        Object.keys(report.perKategoriKeluar || {}).forEach(cat => {
+          katRows.push(['Pengeluaran', cat, SiwargaAPI.formatRupiah(report.perKategoriKeluar[cat])]);
+        });
+        if (!katRows.length) {
+          katRows.push(['-', 'Belum ada mutasi pada periode ini', 'Rp 0']);
+        }
+
+        doc.autoTable({
+          startY: curY + 2.5,
+          margin: { left: margin, right: margin, bottom: 16 },
+          head: [['Tipe', 'Kategori Pos Anggaran', 'Jumlah']],
+          body: katRows,
+          theme: 'grid',
+          styles: { fontSize: 8.5, cellPadding: 2.3, textColor: [30, 41, 59], lineColor: [203, 213, 225], lineWidth: 0.2 },
+          headStyles: { fillColor: [15, 118, 110], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 32 },
+            1: { cellWidth: 'auto' },
+            2: { cellWidth: 42, halign: 'right', fontStyle: 'bold' }
+          }
+        });
+
+        // Blok Tanda Tangan Resmi (cegah terpotong antar halaman)
+        let sigY = doc.lastAutoTable.finalY + 14;
+        if (sigY > pageH - 42) {
+          doc.addPage();
+          sigY = 24;
+        }
+        const leftX = margin + contentW * 0.25;
+        const rightX = margin + contentW * 0.75;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        doc.text('Mengetahui,', leftX, sigY, { align: 'center' });
+        doc.text('Disusun oleh,', rightX, sigY, { align: 'center' });
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        doc.text('Ketua ' + namaRt, leftX, sigY + 5, { align: 'center' });
+        doc.text('Bendahara ' + namaRt, rightX, sigY + 5, { align: 'center' });
+
+        const nameY = sigY + 24;
+        doc.text(cfg.ketua_rt || '____________________', leftX, nameY, { align: 'center' });
+        doc.text(cfg.bendahara_rt || '____________________', rightX, nameY, { align: 'center' });
+        doc.setDrawColor(30, 41, 59);
+        doc.line(leftX - 24, nameY + 1, leftX + 24, nameY + 1);
+        doc.line(rightX - 24, nameY + 1, rightX + 24, nameY + 1);
+
+        // Footer nomor halaman di setiap halaman
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+          doc.setPage(p);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text('SIWARGA GKA · Laporan Keuangan ' + namaRt, margin, pageH - 8);
+          doc.text('Halaman ' + p + ' / ' + totalPages, pageW - margin, pageH - 8, { align: 'right' });
+        }
+
+        const fileTag = filters.startDate && filters.endDate
+          ? (SiwargaAPI.formatDateID(filters.startDate) + '_sd_' + SiwargaAPI.formatDateID(filters.endDate))
+          : SiwargaAPI.formatPeriodeID(SiwargaAPI.currentPeriode());
+        doc.save('Laporan_Buku_Kas_SIWARGA_' + fileTag + '.pdf');
+        $q.notify({ type: 'positive', message: 'Laporan PDF berhasil diunduh!' });
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err && err.message ? err.message : 'Gagal membuat file PDF.' });
+      } finally {
+        exportingPdf.value = false;
+      }
+    }
+
     function exportCsv() {
       const headers = ['Tanggal', 'Tipe', 'Kategori', 'Deskripsi', 'Metode', 'Masuk', 'Keluar', 'Saldo Berjalan', 'Pencatat'];
       const lines = [headers.join(',')];
@@ -6024,7 +6257,7 @@ window.CompFinanceReport = {
     onMounted(loadReport);
 
     return {
-      loading, filters, report, ledgerColumns, loadReport, resetFilters, printReport, exportCsv,
+      loading, exportingPdf, filters, report, ledgerColumns, loadReport, resetFilters, printReport, exportPdf, exportCsv,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID
     };
   }
