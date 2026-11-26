@@ -535,6 +535,9 @@
     .q-tab-panels .no-print {
       display: none !important;
     }
+    .print-force-show {
+      display: block !important;
+    }
     .q-page-container {
       padding: 0 !important;
     }
@@ -3699,8 +3702,8 @@ window.CompFinanceIpl = {
           </div>
         </div>
 
-        <!-- Tampilan Mobile HP (Kartu Rapi Tanpa Geser Kanan-Kiri) -->
-        <div v-if="$q.screen.lt.sm">
+        <!-- Tampilan Mobile HP & Tablet (Kartu Rapi Tanpa Geser Kanan-Kiri) -->
+        <div v-if="$q.screen.lt.md">
           <div v-if="loading" class="text-center q-pa-lg">
             <q-spinner color="teal-8" size="32px" />
             <div class="text-caption text-grey-6 q-mt-sm">Memuat daftar tagihan IPL...</div>
@@ -5243,40 +5246,42 @@ window.CompFinanceKas = {
   props: ['user'],
   template: `
     <div>
-      <div class="row items-center justify-between q-mb-md q-gutter-sm">
-        <div>
-          <div class="text-h6 text-weight-bold text-grey-9">Pencatatan Kas Masuk &amp; Keluar</div>
+      <div class="row items-center justify-between q-mb-md q-col-gutter-sm">
+        <div class="col-12 col-md-auto">
+          <div class="text-subtitle1 text-md-h6 text-weight-bold text-grey-9">Pencatatan Kas Masuk &amp; Keluar</div>
           <div class="text-caption text-grey-6">Catat pemasukan non-IPL (donasi, sewa fasum) dan pengeluaran operasional RT lengkap dengan bukti kwitansi Drive</div>
         </div>
-        <div v-if="canManage" class="row q-gutter-sm">
-          <q-btn outline color="teal-8" icon="category" label="Pos Anggaran" @click="openKatDialog" />
-          <q-btn unelevated color="positive" icon="add_circle" label="Kas Masuk" @click="openForm('Masuk')" />
-          <q-btn unelevated color="deep-orange-7" icon="remove_circle" label="Kas Keluar" @click="openForm('Keluar')" />
+        <div v-if="canManage" class="col-12 col-md-auto">
+          <div class="row q-gutter-xs q-gutter-sm-sm">
+            <q-btn outline color="teal-8" icon="category" label="Pos Anggaran" @click="openKatDialog" />
+            <q-btn unelevated color="positive" icon="add_circle" label="Kas Masuk" @click="openForm('Masuk')" />
+            <q-btn unelevated color="deep-orange-7" icon="remove_circle" label="Kas Keluar" @click="openForm('Keluar')" />
+          </div>
         </div>
       </div>
 
-      <div class="row q-col-gutter-md q-mb-md">
-        <div class="col-12 col-sm-4">
-          <q-card flat class="stat-card q-pa-md">
-            <div class="text-caption text-grey-6">Total Kas Masuk (Filter)</div>
-            <div class="text-h6 text-weight-bolder text-positive mono-num q-mt-xs">{{ formatRupiah(totals.masuk) }}</div>
+      <div class="row q-col-gutter-sm q-col-gutter-sm-md q-mb-md">
+        <div class="col-6 col-sm-4">
+          <q-card flat class="stat-card q-pa-sm q-pa-sm-md">
+            <div class="text-caption text-grey-6">Kas Masuk (Filter)</div>
+            <div class="text-body1 text-sm-h6 text-weight-bolder text-positive mono-num q-mt-xs">{{ formatRupiah(totals.masuk) }}</div>
+          </q-card>
+        </div>
+        <div class="col-6 col-sm-4">
+          <q-card flat class="stat-card q-pa-sm q-pa-sm-md">
+            <div class="text-caption text-grey-6">Kas Keluar (Filter)</div>
+            <div class="text-body1 text-sm-h6 text-weight-bolder text-negative mono-num q-mt-xs">{{ formatRupiah(totals.keluar) }}</div>
           </q-card>
         </div>
         <div class="col-12 col-sm-4">
-          <q-card flat class="stat-card q-pa-md">
-            <div class="text-caption text-grey-6">Total Kas Keluar (Filter)</div>
-            <div class="text-h6 text-weight-bolder text-negative mono-num q-mt-xs">{{ formatRupiah(totals.keluar) }}</div>
-          </q-card>
-        </div>
-        <div class="col-12 col-sm-4">
-          <q-card flat class="stat-card q-pa-md">
+          <q-card flat class="stat-card q-pa-sm q-pa-sm-md">
             <div class="text-caption text-grey-6">Selisih Arus Kas</div>
-            <div class="text-h6 text-weight-bolder mono-num q-mt-xs" :class="totals.net >= 0 ? 'text-teal-9' : 'text-negative'">{{ formatRupiah(totals.net) }}</div>
+            <div class="text-subtitle1 text-sm-h6 text-weight-bolder mono-num q-mt-xs" :class="totals.net >= 0 ? 'text-teal-9' : 'text-negative'">{{ formatRupiah(totals.net) }}</div>
           </q-card>
         </div>
       </div>
 
-      <q-card flat class="surface-card q-pa-md">
+      <q-card flat class="surface-card q-pa-sm q-pa-sm-md">
         <div class="row q-col-gutter-sm q-mb-md">
           <div class="col-12 col-sm-3">
             <q-select v-model="filterTipe" :options="['Semua', 'Masuk', 'Keluar']" outlined dense label="Tipe Transaksi" />
@@ -5301,7 +5306,63 @@ window.CompFinanceKas = {
           </div>
         </div>
 
-        <q-table flat bordered :rows="filteredRows" :columns="columns" row-key="id" :loading="loading" :pagination="{ rowsPerPage: 12 }">
+        <!-- Tampilan Kartu Rapi untuk HP & Tablet (Tanpa Geser Kanan-Kiri) -->
+        <div v-if="$q.screen.lt.md">
+          <div v-if="loading" class="text-center q-pa-lg">
+            <q-spinner color="teal-8" size="32px" />
+            <div class="text-caption text-grey-6 q-mt-sm">Memuat transaksi arus kas...</div>
+          </div>
+          <div v-else-if="!filteredRows.length" class="text-center q-pa-lg text-grey-6">
+            <q-icon name="swap_vert" size="40px" color="grey-4" />
+            <div class="text-body2 q-mt-xs">Belum ada transaksi kas pada filter ini.</div>
+          </div>
+          <div v-else class="q-gutter-sm">
+            <div
+              v-for="row in filteredRows.slice(0, mobileLimit)"
+              :key="row.id"
+              class="ipl-mobile-card"
+              :style="row.tipe === 'Masuk' ? 'border-left: 4px solid #16a34a;' : 'border-left: 4px solid #ea580c;'"
+            >
+              <div class="row items-center justify-between no-wrap q-gutter-xs q-mb-xs">
+                <div class="row items-center q-gutter-xs ellipsis">
+                  <q-badge :color="row.tipe === 'Masuk' ? 'positive' : 'deep-orange-7'">{{ row.tipe }}</q-badge>
+                  <span class="text-caption text-grey-7 text-weight-medium">{{ formatDateID(row.tanggal) }}</span>
+                </div>
+                <div class="text-subtitle2 text-weight-bolder mono-num" :class="row.tipe === 'Masuk' ? 'text-positive' : 'text-negative'">
+                  {{ row.tipe === 'Masuk' ? '+' : '-' }} {{ formatRupiah(row.nominal) }}
+                </div>
+              </div>
+
+              <div class="text-caption text-teal-9 text-weight-bold">{{ row.kategori }}</div>
+              <div class="text-body2 text-grey-9 q-mt-xs" style="line-height: 1.4; word-break: break-word;">
+                {{ row.deskripsi }}
+              </div>
+
+              <div class="row items-center justify-between q-mt-sm q-pt-xs" style="border-top: 1px dashed #e2e8f0;">
+                <div class="text-caption text-grey-6 ellipsis q-pr-xs">
+                  {{ row.metode || 'Tunai' }} · {{ row.dicatat_oleh || '-' }}
+                </div>
+                <div class="row items-center q-gutter-xs no-wrap">
+                  <q-chip v-if="row.referensi_id" dense size="xs" color="teal-1" text-color="teal-9" class="q-ma-none">Auto IPL</q-chip>
+                  <q-btn v-if="row.bukti_url" outline dense no-caps size="xs" icon="receipt" label="Bukti" color="teal-8" @click="viewBukti(row)" />
+                  <q-btn v-if="canManage && !row.referensi_id" flat dense round size="sm" icon="edit" color="indigo-7" @click="openForm(row.tipe, row)" />
+                  <q-btn v-if="canManage && !row.referensi_id" flat dense round size="sm" icon="delete" color="negative" @click="deleteTx(row)" />
+                </div>
+              </div>
+            </div>
+
+            <div v-if="filteredRows.length > mobileLimit" class="text-center q-pt-sm">
+              <q-btn
+                outline no-caps color="teal-8" size="sm"
+                :label="'Tampilkan lebih banyak (' + (filteredRows.length - mobileLimit) + ' lagi)'"
+                @click="mobileLimit += 20"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Tampilan Tabel Lengkap untuk Laptop / Desktop -->
+        <q-table v-else flat bordered :rows="filteredRows" :columns="columns" row-key="id" :loading="loading" :pagination="{ rowsPerPage: 12 }">
           <template #body-cell-tipe="props">
             <q-td :props="props">
               <q-badge :color="props.row.tipe === 'Masuk' ? 'positive' : 'deep-orange-7'">{{ props.row.tipe }}</q-badge>
@@ -5481,6 +5542,7 @@ window.CompFinanceKas = {
     const filterBulan = ref('');
     const periodeFilterOptions = SiwargaAPI.buildPeriodeOptions(true);
     const search = ref('');
+    const mobileLimit = ref(20);
     const dialog = ref(false);
     const uploadFile = ref(null);
     const buktiDialog = ref(false);
@@ -5659,14 +5721,14 @@ window.CompFinanceKas = {
     onMounted(loadData);
 
     return {
-      canManage, loading, saving, filterTipe, filterBulan, periodeFilterOptions, search,
+      canManage, loading, saving, filterTipe, filterBulan, periodeFilterOptions, search, mobileLimit,
       columns, filteredRows, totals, dialog, form, uploadFile,
       kategoriMasuk, kategoriKeluar, activeKategoriOptions,
       kategoriList, filteredKategoriList, katDialog, katFilterTipe, savingKat, katForm,
       buktiDialog, buktiItem,
       onTipeChange, openForm, submitForm, deleteTx, viewBukti,
       openKatDialog, resetKatForm, editKategori, submitKategori, toggleKategori,
-      formatRupiah: SiwargaAPI.formatRupiah
+      formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID
     };
   }
 };
@@ -5701,91 +5763,152 @@ window.CompFinanceReport = {
       </q-card>
 
       <!-- Header Resmi Laporan (Tampil saat Cetak & Di Layar) -->
-      <q-card flat class="surface-card q-pa-lg">
+      <q-card flat class="surface-card q-pa-sm q-pa-md-lg">
         <div class="row items-center no-wrap q-pb-md q-mb-md" style="border-bottom: 2px solid #0f766e;">
-          <div style="width: 72px;" class="row justify-center">
-            <siwarga-logo :src="settings.logo_url" :size="56" variant="color" />
+          <div style="width: 56px;" class="row justify-center gt-xs">
+            <siwarga-logo :src="settings.logo_url" :size="48" variant="color" />
           </div>
           <div class="col text-center">
-            <div class="text-h6 text-weight-bolder text-teal-10">LAPORAN BUKU KAS KEUANGAN {{ settings.nama_rt }}</div>
-            <div class="text-subtitle2 text-grey-8">{{ settings.nama_lingkungan }} · {{ settings.kelurahan }}</div>
+            <div class="text-subtitle1 text-md-h6 text-weight-bolder text-teal-10">LAPORAN BUKU KAS KEUANGAN {{ settings.nama_rt }}</div>
+            <div class="text-caption text-md-subtitle2 text-grey-8">{{ settings.nama_lingkungan }} · {{ settings.kelurahan }}</div>
             <div class="text-caption text-grey-6">
               Periode: {{ filters.startDate ? formatDateID(filters.startDate) : 'Awal Pembukuan' }} s/d {{ filters.endDate ? formatDateID(filters.endDate) : 'Hari Ini' }}
             </div>
           </div>
-          <div style="width: 72px;"></div>
+          <div style="width: 56px;" class="gt-xs"></div>
         </div>
 
         <!-- Ringkasan Saldo -->
-        <div class="row q-col-gutter-md q-mb-lg">
+        <div class="row q-col-gutter-sm q-col-gutter-sm-md q-mb-md q-mb-md-lg">
           <div class="col-6 col-md-3">
-            <div class="q-pa-md rounded-borders bg-grey-1">
-              <div class="text-caption text-grey-7">Saldo Awal Periode</div>
-              <div class="text-subtitle1 text-weight-bold mono-num">{{ formatRupiah(report.saldoAwalPeriode) }}</div>
+            <div class="q-pa-sm q-pa-sm-md rounded-borders bg-grey-1">
+              <div class="text-caption text-grey-7">Saldo Awal</div>
+              <div class="text-body1 text-sm-subtitle1 text-weight-bold mono-num">{{ formatRupiah(report.saldoAwalPeriode) }}</div>
             </div>
           </div>
           <div class="col-6 col-md-3">
-            <div class="q-pa-md rounded-borders" style="background:#ecfdf5;">
-              <div class="text-caption text-positive">Total Penerimaan (Debit)</div>
-              <div class="text-subtitle1 text-weight-bold text-positive mono-num">+ {{ formatRupiah(report.totalMasuk) }}</div>
+            <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#ecfdf5;">
+              <div class="text-caption text-positive">Penerimaan (Debit)</div>
+              <div class="text-body1 text-sm-subtitle1 text-weight-bold text-positive mono-num">+ {{ formatRupiah(report.totalMasuk) }}</div>
             </div>
           </div>
           <div class="col-6 col-md-3">
-            <div class="q-pa-md rounded-borders" style="background:#fff7ed;">
-              <div class="text-caption text-deep-orange-8">Total Pengeluaran (Kredit)</div>
-              <div class="text-subtitle1 text-weight-bold text-deep-orange-8 mono-num">- {{ formatRupiah(report.totalKeluar) }}</div>
+            <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#fff7ed;">
+              <div class="text-caption text-deep-orange-8">Pengeluaran (Kredit)</div>
+              <div class="text-body1 text-sm-subtitle1 text-weight-bold text-deep-orange-8 mono-num">- {{ formatRupiah(report.totalKeluar) }}</div>
             </div>
           </div>
           <div class="col-6 col-md-3">
-            <div class="q-pa-md rounded-borders" style="background:#f0fdfa; border: 1px solid #99f6e4;">
-              <div class="text-caption text-teal-9 text-weight-bold">Saldo Akhir Kas RT</div>
-              <div class="text-h6 text-weight-bolder text-teal-9 mono-num">{{ formatRupiah(report.saldoAkhir) }}</div>
+            <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#f0fdfa; border: 1px solid #99f6e4;">
+              <div class="text-caption text-teal-9 text-weight-bold">Saldo Akhir Kas</div>
+              <div class="text-subtitle1 text-sm-h6 text-weight-bolder text-teal-9 mono-num">{{ formatRupiah(report.saldoAkhir) }}</div>
             </div>
           </div>
         </div>
 
-        <!-- Tabel Buku Kas Umum (Running Balance) -->
+        <!-- Buku Kas Umum (Kartu Rapi di HP/Tablet, Tabel Resmi di Laptop & Cetak) -->
         <div class="text-subtitle1 text-weight-bold text-grey-9 q-mb-sm">Buku Kas Umum (Mutasi &amp; Saldo Berjalan)</div>
-        <q-table
-          flat
-          bordered
-          :rows="report.ledger"
-          :columns="ledgerColumns"
-          row-key="id"
-          :loading="loading"
-          :rows-per-page-options="[0]"
-          hide-pagination
-        >
-          <template #top-row>
-            <q-tr class="bg-grey-1 text-weight-bold">
-              <q-td colspan="5">Saldo Awal Periode</q-td>
-              <q-td class="text-right mono-num">{{ formatRupiah(report.saldoAwalPeriode) }}</q-td>
-            </q-tr>
-          </template>
-          <template #body-cell-debit="props">
-            <q-td :props="props" class="mono-num text-positive text-weight-medium">
-              {{ props.row.debit > 0 ? formatRupiah(props.row.debit) : '-' }}
-            </q-td>
-          </template>
-          <template #body-cell-kredit="props">
-            <q-td :props="props" class="mono-num text-negative text-weight-medium">
-              {{ props.row.kredit > 0 ? formatRupiah(props.row.kredit) : '-' }}
-            </q-td>
-          </template>
-          <template #body-cell-saldo_berjalan="props">
-            <q-td :props="props" class="mono-num text-weight-bold text-teal-10">
-              {{ formatRupiah(props.row.saldo_berjalan) }}
-            </q-td>
-          </template>
-          <template #bottom-row>
-            <q-tr class="bg-teal-1 text-weight-bolder text-teal-10">
-              <q-td colspan="3">TOTAL MUTASI &amp; SALDO AKHIR</q-td>
-              <q-td class="text-right mono-num">{{ formatRupiah(report.totalMasuk) }}</q-td>
-              <q-td class="text-right mono-num">{{ formatRupiah(report.totalKeluar) }}</q-td>
-              <q-td class="text-right mono-num">{{ formatRupiah(report.saldoAkhir) }}</q-td>
-            </q-tr>
-          </template>
-        </q-table>
+
+        <!-- Mode HP & Tablet: Daftar Kartu Mutasi + Saldo Berjalan -->
+        <div class="lt-md no-print q-gutter-sm">
+          <div class="q-pa-sm rounded-borders bg-grey-2 row items-center justify-between text-weight-bold">
+            <span class="text-caption text-grey-8">Saldo Awal Periode</span>
+            <span class="text-body2 mono-num text-grey-9">{{ formatRupiah(report.saldoAwalPeriode) }}</span>
+          </div>
+
+          <div v-if="loading" class="text-center q-pa-md">
+            <q-spinner color="teal-8" size="28px" />
+          </div>
+          <div v-else-if="!(report.ledger && report.ledger.length)" class="text-center q-pa-md text-caption text-grey-6">
+            Belum ada mutasi transaksi pada rentang tanggal ini.
+          </div>
+          <div
+            v-else
+            v-for="row in report.ledger"
+            :key="row.id"
+            class="ipl-mobile-card"
+            :style="row.debit > 0 ? 'border-left: 4px solid #16a34a;' : 'border-left: 4px solid #ea580c;'"
+          >
+            <div class="row items-center justify-between no-wrap q-gutter-xs q-mb-xs">
+              <div class="row items-center q-gutter-xs ellipsis">
+                <q-badge :color="row.debit > 0 ? 'positive' : 'deep-orange-7'">{{ row.debit > 0 ? 'Masuk' : 'Keluar' }}</q-badge>
+                <span class="text-caption text-grey-7 text-weight-medium">{{ formatDateID(row.tanggal) }}</span>
+              </div>
+              <div class="text-subtitle2 text-weight-bolder mono-num" :class="row.debit > 0 ? 'text-positive' : 'text-negative'">
+                {{ row.debit > 0 ? ('+ ' + formatRupiah(row.debit)) : ('- ' + formatRupiah(row.kredit)) }}
+              </div>
+            </div>
+            <div class="text-caption text-teal-9 text-weight-bold">{{ row.kategori }}</div>
+            <div class="text-body2 text-grey-9 q-mt-xs" style="line-height: 1.4; word-break: break-word;">
+              {{ row.deskripsi }}
+            </div>
+            <div class="row items-center justify-between q-mt-sm q-pt-xs" style="border-top: 1px dashed #e2e8f0;">
+              <span class="text-caption text-grey-6">Saldo Berjalan</span>
+              <span class="text-body2 text-weight-bolder text-teal-10 mono-num">{{ formatRupiah(row.saldo_berjalan) }}</span>
+            </div>
+          </div>
+
+          <div class="q-pa-md rounded-borders bg-teal-1 text-teal-10" style="border: 1px solid #99f6e4;">
+            <div class="text-caption text-weight-bolder text-uppercase q-mb-xs">Total Mutasi &amp; Saldo Akhir</div>
+            <div class="row justify-between text-caption">
+              <span>Total Masuk (Debit)</span>
+              <strong class="mono-num text-positive">+ {{ formatRupiah(report.totalMasuk) }}</strong>
+            </div>
+            <div class="row justify-between text-caption q-mt-xs">
+              <span>Total Keluar (Kredit)</span>
+              <strong class="mono-num text-negative">- {{ formatRupiah(report.totalKeluar) }}</strong>
+            </div>
+            <q-separator class="q-my-xs" />
+            <div class="row justify-between text-subtitle2 text-weight-bolder">
+              <span>Saldo Akhir</span>
+              <span class="mono-num">{{ formatRupiah(report.saldoAkhir) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode Laptop / Desktop & Saat Cetak Laporan -->
+        <div class="gt-sm print-force-show">
+          <q-table
+            flat
+            bordered
+            :rows="report.ledger"
+            :columns="ledgerColumns"
+            row-key="id"
+            :loading="loading"
+            :rows-per-page-options="[0]"
+            hide-pagination
+          >
+            <template #top-row>
+              <q-tr class="bg-grey-1 text-weight-bold">
+                <q-td colspan="5">Saldo Awal Periode</q-td>
+                <q-td class="text-right mono-num">{{ formatRupiah(report.saldoAwalPeriode) }}</q-td>
+              </q-tr>
+            </template>
+            <template #body-cell-debit="props">
+              <q-td :props="props" class="mono-num text-positive text-weight-medium">
+                {{ props.row.debit > 0 ? formatRupiah(props.row.debit) : '-' }}
+              </q-td>
+            </template>
+            <template #body-cell-kredit="props">
+              <q-td :props="props" class="mono-num text-negative text-weight-medium">
+                {{ props.row.kredit > 0 ? formatRupiah(props.row.kredit) : '-' }}
+              </q-td>
+            </template>
+            <template #body-cell-saldo_berjalan="props">
+              <q-td :props="props" class="mono-num text-weight-bold text-teal-10">
+                {{ formatRupiah(props.row.saldo_berjalan) }}
+              </q-td>
+            </template>
+            <template #bottom-row>
+              <q-tr class="bg-teal-1 text-weight-bolder text-teal-10">
+                <q-td colspan="3">TOTAL MUTASI &amp; SALDO AKHIR</q-td>
+                <q-td class="text-right mono-num">{{ formatRupiah(report.totalMasuk) }}</q-td>
+                <q-td class="text-right mono-num">{{ formatRupiah(report.totalKeluar) }}</q-td>
+                <q-td class="text-right mono-num">{{ formatRupiah(report.saldoAkhir) }}</q-td>
+              </q-tr>
+            </template>
+          </q-table>
+        </div>
 
         <!-- Ringkasan per Kategori -->
         <div class="row q-col-gutter-md q-mt-lg">
