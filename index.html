@@ -530,14 +530,16 @@
     return parts[1] + '-' + parts[0];
   }
 
-  function buildPeriodeOptions(includeAll) {
+  function buildPeriodeOptions(includeAll, pastMonths, futureMonths) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
     const now = new Date();
+    const past = typeof pastMonths === 'number' ? pastMonths : 24;
+    const future = typeof futureMonths === 'number' ? futureMonths : 12;
     const opts = [];
     if (includeAll) {
       opts.push({ value: '', label: 'Semua Periode' });
     }
-    for (let offset = 6; offset >= -18; offset--) {
+    for (let offset = future; offset >= -past; offset--) {
       const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -547,6 +549,26 @@
       });
     }
     return opts;
+  }
+
+  function expandPeriodeRange(startYm, endYm) {
+    const s = String(startYm || '').trim();
+    const e = String(endYm || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(s) || !/^\d{4}-\d{2}$/.test(e) || s > e) return [];
+    const sp = s.split('-');
+    const ep = e.split('-');
+    let y = parseInt(sp[0], 10);
+    let m = parseInt(sp[1], 10);
+    const ey = parseInt(ep[0], 10);
+    const em = parseInt(ep[1], 10);
+    const out = [];
+    while (y < ey || (y === ey && m <= em)) {
+      out.push(y + '-' + (m < 10 ? '0' + m : String(m)));
+      if (out.length >= 36) break;
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+    return out;
   }
 
   function currentPeriodeClient() {
@@ -1394,26 +1416,116 @@
         saveMockDb(db);
         return t;
       }
-      case 'verifyIplPayment': {
-        const u = needAuth(['admin', 'bendahara']);
-        const t = db.tagihan.find(function (x) { return x.id === payload.tagihan_id; });
-        if (!t) throw new Error('Tagihan tidak ditemukan.');
-        if (payload.action === 'approve') {
-          const rekSuffix = t.rekening_tujuan ? (' [' + t.rekening_tujuan + ']') : '';
+      case 'submitRapelIpl': {
+        const u = needAuth();
+        const isStaff = u.role === 'superadmin' || u.role === 'admin' || u.role === 'bendahara';
+        const targetKkId = isStaff ? String(payload.kk_id || '') : String(u.kk_id || '');
+        const kk = db.keluarga.find(function (k) { return String(k.id) === targetKkId; });
+        if (!kk) throw new Error('Data Kartu Keluarga tidak ditemukan.');
+        const periods = expandPeriodeRange(payload.periode_mulai, payload.periode_selesai);
+        if (!periods.length) throw new Error('Rentang periode mulai & selesai tidak valid.');
+        const defNom = Number(kk.nominal_ipl || db.settings.nominal_ipl_default || 150000);
+        const nomBulan = (isStaff && Number(payload.nominal_per_bulan) > 0) ? Number(payload.nominal_per_bulan) : defNom;
+        const metode = payload.metode_bayar || 'Transfer Bank';
+        const rekTujuan = metode === 'Transfer Bank' ? String(payload.rekening_tujuan || '').trim() : '';
+        const directApprove = Boolean(payload.langsung_lunas) && isStaff;
+        const buktiUrl = (payload.filePayload && payload.filePayload.base64Data) ? payload.filePayload.base64Data : '';
+        if (!buktiUrl && metode !== 'Tunai' && !directApprove) {
+          throw new Error('Silakan lampirkan foto/PDF bukti pembayaran.');
+        }
+        const payable = [];
+        const skippedLunas = [];
+        periods.forEach(function (ym) {
+          const ex = db.tagihan.find(function (x) { return String(x.kk_id) === targetKkId && String(x.periode) === ym; });
+          if (ex && ex.status === 'Lunas') skippedLunas.push(ym);
+          else payable.push({ ym: ym, ex: ex });
+        });
+        if (!payable.length) throw new Error('Semua bulan pada rentang tersebut sudah berstatus Lunas.');
+        const batchId = mockId('RPL');
+        const rangeText = payable.length > 1
+          ? (formatPeriodeID(payable[0].ym) + ' s/d ' + formatPeriodeID(payable[payable.length - 1].ym) + ' (' + payable.length + ' bln)')
+          : formatPeriodeID(payable[0].ym);
+        let grandTotal = 0;
+        payable.forEach(function (p) { grandTotal += p.ex ? Number(p.ex.total || p.ex.nominal || nomBulan) : nomBulan; });
+        let kasId = '';
+        if (directApprove) {
+          const rekSuffix = rekTujuan ? (' [' + rekTujuan + ']') : '';
           const kasObj = {
             id: mockId('KAS'), tanggal: today, tipe: 'Masuk', kategori: 'IPL Bulanan',
-            deskripsi: 'Pembayaran IPL ' + t.periode + ' - Rumah ' + t.no_rumah + ' (' + t.kepala_keluarga + ')' + rekSuffix,
-            nominal: Number(t.total || t.nominal), metode: t.metode_bayar || 'Transfer Bank',
-            referensi_id: t.id, bukti_url: t.bukti_url || '', dicatat_oleh: u.nama, created_at: now
+            deskripsi: 'Pembayaran IPL Rapel ' + rangeText + ' - Rumah ' + kk.no_rumah + ' (' + kk.kepala_keluarga + ')' + rekSuffix,
+            nominal: grandTotal, metode: metode, referensi_id: batchId, bukti_url: buktiUrl, dicatat_oleh: u.nama, created_at: now
           };
           db.kas.unshift(kasObj);
-          t.status = 'Lunas';
-          t.diverifikasi_oleh = u.nama;
-          t.tanggal_verifikasi = today;
-          t.catatan_bendahara = payload.catatan_bendahara || 'Pembayaran terverifikasi';
-          t.kas_id = kasObj.id;
+          kasId = kasObj.id;
+        }
+        const targetStatus = directApprove ? 'Lunas' : 'Menunggu Verifikasi';
+        const catWarga = String(payload.catatan_warga || ('Pembayaran IPL Rapel ' + rangeText)).trim();
+        payable.forEach(function (p) {
+          if (p.ex) {
+            p.ex.status = targetStatus;
+            p.ex.metode_bayar = metode;
+            p.ex.rekening_tujuan = rekTujuan;
+            if (buktiUrl) p.ex.bukti_url = buktiUrl;
+            p.ex.tanggal_upload = today;
+            p.ex.catatan_warga = catWarga;
+            p.ex.diverifikasi_oleh = directApprove ? u.nama : '';
+            p.ex.tanggal_verifikasi = directApprove ? today : '';
+            p.ex.catatan_bendahara = directApprove ? ('Pelunasan rapel ' + rangeText) : '';
+            p.ex.kas_id = kasId;
+            p.ex.batch_id = batchId;
+          } else {
+            db.tagihan.push({
+              id: mockId('IPL'), periode: p.ym, kk_id: kk.id, no_rumah: kk.no_rumah, kepala_keluarga: kk.kepala_keluarga,
+              nominal: nomBulan, denda: 0, total: nomBulan, status: targetStatus, tanggal_jatuh_tempo: p.ym + '-10',
+              metode_bayar: metode, rekening_tujuan: rekTujuan, bukti_url: buktiUrl, tanggal_upload: today,
+              catatan_warga: catWarga, diverifikasi_oleh: directApprove ? u.nama : '',
+              tanggal_verifikasi: directApprove ? today : '', catatan_bendahara: directApprove ? ('Pelunasan rapel ' + rangeText) : '',
+              kas_id: kasId, batch_id: batchId, created_at: now
+            });
+          }
+        });
+        saveMockDb(db);
+        return {
+          batch_id: batchId, count: payable.length, skippedLunas: skippedLunas, grandTotal: grandTotal, status: targetStatus,
+          message: directApprove
+            ? ('Pelunasan rapel ' + rangeText + ' (' + formatRupiah(grandTotal) + ') dicatat Lunas & masuk Buku Kas!')
+            : ('Bukti rapel ' + rangeText + ' (' + formatRupiah(grandTotal) + ') berhasil dikirim untuk verifikasi.')
+        };
+      }
+      case 'verifyIplPayment': {
+        const u = needAuth(['admin', 'bendahara']);
+        const batchId = String(payload.batch_id || '').trim();
+        const t = payload.tagihan_id
+          ? db.tagihan.find(function (x) { return x.id === payload.tagihan_id; })
+          : db.tagihan.find(function (x) { return batchId && x.batch_id === batchId; });
+        if (!t) throw new Error('Tagihan tidak ditemukan.');
+        if (payload.action === 'approve') {
+          const targets = batchId
+            ? db.tagihan.filter(function (x) { return x.batch_id === batchId && x.status === 'Menunggu Verifikasi'; })
+            : [t];
+          targets.sort(function (a, b) { return String(a.periode).localeCompare(String(b.periode)); });
+          let grandTotal = 0;
+          targets.forEach(function (x) { grandTotal += Number(x.total || x.nominal || 0); });
+          const first = targets[0], last = targets[targets.length - 1];
+          const rekSuffix = first.rekening_tujuan ? (' [' + first.rekening_tujuan + ']') : '';
+          const desk = targets.length > 1
+            ? ('Pembayaran IPL Rapel ' + formatPeriodeID(first.periode) + ' s/d ' + formatPeriodeID(last.periode) + ' (' + targets.length + ' bln) - Rumah ' + first.no_rumah + ' (' + first.kepala_keluarga + ')' + rekSuffix)
+            : ('Pembayaran IPL ' + formatPeriodeID(first.periode) + ' - Rumah ' + first.no_rumah + ' (' + first.kepala_keluarga + ')' + rekSuffix);
+          const kasObj = {
+            id: mockId('KAS'), tanggal: today, tipe: 'Masuk', kategori: 'IPL Bulanan',
+            deskripsi: desk, nominal: grandTotal, metode: first.metode_bayar || 'Transfer Bank',
+            referensi_id: targets.length > 1 ? batchId : first.id, bukti_url: first.bukti_url || '', dicatat_oleh: u.nama, created_at: now
+          };
+          db.kas.unshift(kasObj);
+          targets.forEach(function (x) {
+            x.status = 'Lunas';
+            x.diverifikasi_oleh = u.nama;
+            x.tanggal_verifikasi = today;
+            x.catatan_bendahara = payload.catatan_bendahara || 'Pembayaran terverifikasi';
+            x.kas_id = kasObj.id;
+          });
           saveMockDb(db);
-          return { tagihan: t, kas: kasObj };
+          return { tagihan: targets[0], updatedCount: targets.length, kas: kasObj };
         } else if (payload.action === 'revert') {
           const cfg = parseMenuConfig(db.settings);
           const allowedRev = (cfg._permissions && cfg._permissions.verif_revisi_roles) || ['superadmin', 'admin', 'bendahara'];
@@ -1421,35 +1533,42 @@
             throw new Error('Peran Anda (' + u.role + ') tidak memiliki izin untuk merevisi verifikasi.');
           }
           if (!payload.catatan_bendahara) throw new Error('Alasan revisi wajib diisi.');
+          const effBatch = batchId || t.batch_id || '';
+          const targets = (effBatch && db.tagihan.filter(function (x) { return x.batch_id === effBatch && x.status === t.status; }).length > 1)
+            ? db.tagihan.filter(function (x) { return x.batch_id === effBatch && x.status === t.status; })
+            : [t];
           let revertedKasId = '';
           if (t.status === 'Lunas') {
-            if (t.kas_id) {
-              db.kas = db.kas.filter(function (k) { return k.id !== t.kas_id; });
-              revertedKasId = t.kas_id;
-            } else {
-              const linked = db.kas.find(function (k) { return k.referensi_id === t.id; });
-              if (linked) {
-                db.kas = db.kas.filter(function (k) { return k.id !== linked.id; });
-                revertedKasId = linked.id;
+            targets.forEach(function (x) {
+              if (x.kas_id) {
+                db.kas = db.kas.filter(function (k) { return k.id !== x.kas_id; });
+                revertedKasId = x.kas_id;
               }
-            }
+            });
           }
           const prevStatus = t.status;
-          t.status = payload.target_status === 'Belum Bayar' ? 'Belum Bayar' : 'Menunggu Verifikasi';
-          t.diverifikasi_oleh = '';
-          t.tanggal_verifikasi = '';
-          t.kas_id = '';
-          t.catatan_bendahara = '[Revisi dari ' + prevStatus + ' oleh ' + u.nama + ']: ' + payload.catatan_bendahara;
+          targets.forEach(function (x) {
+            x.status = payload.target_status === 'Belum Bayar' ? 'Belum Bayar' : 'Menunggu Verifikasi';
+            x.diverifikasi_oleh = '';
+            x.tanggal_verifikasi = '';
+            x.kas_id = '';
+            x.catatan_bendahara = '[Revisi dari ' + prevStatus + ' oleh ' + u.nama + ']: ' + payload.catatan_bendahara;
+          });
           saveMockDb(db);
-          return { tagihan: t, revertedKasId: revertedKasId };
+          return { tagihan: targets[0], updatedCount: targets.length, revertedKasId: revertedKasId };
         } else {
           if (!payload.catatan_bendahara) throw new Error('Alasan penolakan wajib diisi.');
-          t.status = 'Ditolak';
-          t.diverifikasi_oleh = u.nama;
-          t.tanggal_verifikasi = today;
-          t.catatan_bendahara = payload.catatan_bendahara;
+          const targets = batchId
+            ? db.tagihan.filter(function (x) { return x.batch_id === batchId && x.status === 'Menunggu Verifikasi'; })
+            : [t];
+          targets.forEach(function (x) {
+            x.status = 'Ditolak';
+            x.diverifikasi_oleh = u.nama;
+            x.tanggal_verifikasi = today;
+            x.catatan_bendahara = payload.catatan_bendahara;
+          });
           saveMockDb(db);
-          return { tagihan: t };
+          return { tagihan: targets[0], updatedCount: targets.length };
         }
       }
       case 'getKasList':
@@ -1615,6 +1734,7 @@
     formatDateTimeID: formatDateTimeID,
     formatPeriodeID: formatPeriodeID,
     buildPeriodeOptions: buildPeriodeOptions,
+    expandPeriodeRange: expandPeriodeRange,
     currentPeriode: currentPeriodeClient,
     readFileAsPayload: readFileAsPayload,
     call: function (action, payload) {
@@ -3322,6 +3442,13 @@ window.CompFinanceIpl = {
         </div>
         <div class="row q-gutter-sm">
           <q-btn
+            unelevated
+            color="deep-purple-7"
+            icon="date_range"
+            label="Bayar Rapel / Multi-Bulan"
+            @click="openRapelDialog"
+          />
+          <q-btn
             v-if="canManage"
             unelevated
             color="green-7"
@@ -3424,6 +3551,12 @@ window.CompFinanceIpl = {
         </div>
 
         <q-table flat bordered :rows="filteredRows" :columns="columns" row-key="id" :loading="loading" :pagination="{ rowsPerPage: 15 }">
+          <template #body-cell-periode="props">
+            <q-td :props="props">
+              <span class="text-weight-medium">{{ formatPeriodeID(props.row.periode) }}</span>
+              <q-badge v-if="props.row.batch_id" color="deep-purple-7" class="q-ml-xs" style="font-size:10px">Rapel</q-badge>
+            </q-td>
+          </template>
           <template #body-cell-no_rumah="props">
             <q-td :props="props"><q-badge color="teal-8" class="text-weight-bold">{{ props.row.no_rumah }}</q-badge></q-td>
           </template>
@@ -3506,6 +3639,213 @@ window.CompFinanceIpl = {
               <div class="row justify-end q-gutter-sm q-mt-md">
                 <q-btn flat label="Batal" v-close-popup />
                 <q-btn type="submit" unelevated color="teal-8" label="Buat Tagihan" :loading="saving" />
+              </div>
+            </q-form>
+          </q-card-section>
+        </q-card>
+      </q-dialog>
+
+      <!-- Dialog Bayar Rapel / Pelunasan Multi-Bulan -->
+      <q-dialog v-model="rapelDialog" persistent>
+        <q-card style="width: 600px; max-width: 96vw;">
+          <q-card-section class="bg-deep-purple-8 text-white row items-center justify-between">
+            <div>
+              <div class="text-subtitle1 text-weight-bold">Bayar Rapel / Pelunasan Multi-Bulan IPL</div>
+              <div class="text-caption text-purple-1">Lunasi tunggakan bulan sebelumnya s/d bulan berjalan atau akhir tahun dengan 1 bukti transfer</div>
+            </div>
+            <q-btn flat round dense icon="close" v-close-popup />
+          </q-card-section>
+          <q-card-section style="max-height: 78vh; overflow-y: auto;">
+            <q-form @submit.prevent="submitRapel" class="q-gutter-sm">
+              <!-- Pilih Rumah (Khusus Bendahara / Admin) -->
+              <q-select
+                v-if="canManage"
+                v-model="rapelForm.kk_id"
+                :options="filteredKkOptions"
+                option-value="value"
+                option-label="label"
+                emit-value
+                map-options
+                use-input
+                input-debounce="0"
+                @filter="filterKkSelect"
+                @update:model-value="onSelectRapelKk"
+                outlined dense
+                :loading="loadingKk"
+                label="Pilih Rumah / Kepala Keluarga *"
+                :rules="[v=>!!v||'Pilih rumah warga terlebih dahulu']"
+              >
+                <template #prepend><q-icon name="home" color="deep-purple-7" /></template>
+              </q-select>
+
+              <div v-else class="q-pa-sm rounded-borders row items-center justify-between" style="background:#f5f3ff; border: 1px solid #ddd6fe;">
+                <div>
+                  <div class="text-caption text-deep-purple-9 text-weight-bold">Rumah Anda</div>
+                  <div class="text-body2 text-weight-bold text-grey-9">{{ user.no_rumah }} — {{ user.nama }}</div>
+                </div>
+                <q-badge color="deep-purple-7" class="q-pa-xs">{{ formatRupiah(rapelForm.nominal_per_bulan) }} / bln</q-badge>
+              </div>
+
+              <!-- Rentang Periode -->
+              <div class="row q-col-gutter-sm">
+                <div class="col-12 col-sm-6">
+                  <q-select
+                    v-model="rapelForm.periode_mulai"
+                    :options="periodeRapelOptions"
+                    option-value="value"
+                    option-label="label"
+                    emit-value
+                    map-options
+                    outlined dense
+                    label="Dari Bulan (MM-YYYY) *"
+                  />
+                </div>
+                <div class="col-12 col-sm-6">
+                  <q-select
+                    v-model="rapelForm.periode_selesai"
+                    :options="periodeRapelOptions"
+                    option-value="value"
+                    option-label="label"
+                    emit-value
+                    map-options
+                    outlined dense
+                    label="Sampai Bulan (MM-YYYY) *"
+                  />
+                </div>
+              </div>
+
+              <!-- Tombol Pintas Sampai Bulan Berjalan / Akhir Tahun -->
+              <div class="row items-center q-gutter-xs">
+                <span class="text-caption text-grey-7 q-mr-xs">Pintasan cepat:</span>
+                <q-btn
+                  outline dense no-caps size="sm" color="teal-8" icon="today"
+                  :label="'s/d Bulan Berjalan (' + formatPeriodeID(currentYm) + ')'"
+                  @click="setRapelEndCurrent"
+                />
+                <q-btn
+                  outline dense no-caps size="sm" color="deep-purple-7" icon="event_available"
+                  :label="'s/d Akhir Tahun (12-' + currentYear + ')'"
+                  @click="setRapelEndYear"
+                />
+              </div>
+
+              <q-input
+                v-if="canManage"
+                v-model.number="rapelForm.nominal_per_bulan"
+                type="number"
+                outlined dense
+                label="Tarif IPL per Bulan (Rp)"
+                hint="Otomatis mengikuti tarif rumah (bisa disesuaikan jika perlu)"
+              />
+
+              <!-- Ringkasan Kalkulasi Rapel Live -->
+              <div class="q-pa-md rounded-borders" style="background:#f0fdfa; border: 1px solid #99f6e4;">
+                <div v-if="rapelPreview.invalid" class="text-negative text-caption text-weight-bold">
+                  <q-icon name="error_outline" class="q-mr-xs" />Periode "Dari Bulan" tidak boleh melebihi "Sampai Bulan".
+                </div>
+                <template v-else>
+                  <div class="row items-center justify-between q-mb-xs">
+                    <div class="text-body2 text-teal-10 text-weight-bold">
+                      Total Pelunasan ({{ rapelPreview.payable.length }} Bulan):
+                    </div>
+                    <div class="text-h6 text-weight-bolder text-teal-9 mono-num">
+                      {{ formatRupiah(rapelPreview.grandTotal) }}
+                    </div>
+                  </div>
+                  <div v-if="rapelPreview.skippedLunas.length" class="text-caption text-positive q-mb-xs">
+                    <q-icon name="check_circle" size="14px" class="q-mr-xs" />
+                    {{ rapelPreview.skippedLunas.length }} bulan sudah Lunas otomatis dilewati agar tidak dobel bayar.
+                  </div>
+                  <div v-if="!rapelPreview.payable.length" class="text-caption text-amber-10 text-weight-bold">
+                    Semua bulan pada rentang ini sudah berstatus Lunas.
+                  </div>
+                  <div v-else class="row q-gutter-xs q-mt-xs" style="max-height: 92px; overflow-y: auto;">
+                    <q-badge
+                      v-for="m in rapelPreview.months"
+                      :key="m.ym"
+                      :color="m.isLunas ? 'positive' : 'deep-purple-7'"
+                      :outline="m.isLunas"
+                      class="q-pa-xs"
+                    >
+                      {{ formatPeriodeID(m.ym) }}{{ m.isLunas ? ' ✓' : '' }}
+                    </q-badge>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Metode & Rekening Tujuan -->
+              <q-select
+                v-model="rapelForm.metode_bayar"
+                :options="['Transfer Bank', 'QRIS', 'Tunai']"
+                outlined dense label="Metode Pembayaran"
+              />
+
+              <template v-if="rapelForm.metode_bayar === 'Transfer Bank' && bankSelectOptions.length">
+                <q-select
+                  v-model="rapelForm.rekening_tujuan"
+                  :options="bankSelectOptions"
+                  option-value="value"
+                  option-label="label"
+                  emit-value
+                  map-options
+                  outlined dense
+                  label="Transfer ke Bank / Rekening Tujuan *"
+                  :rules="[v=>!!v||'Pilih bank tujuan transfer']"
+                >
+                  <template #prepend><q-icon name="account_balance" color="teal-8" /></template>
+                </q-select>
+                <div
+                  v-if="selectedRapelBank"
+                  class="q-pa-sm rounded-borders row items-center justify-between"
+                  style="background: #f0fdfa; border: 1px solid #99f6e4;"
+                >
+                  <div class="text-caption">
+                    <div class="text-teal-9 text-weight-bold">{{ selectedRapelBank.bank }} · <span class="mono-num">{{ selectedRapelBank.norek }}</span></div>
+                    <div class="text-grey-7">a.n. {{ selectedRapelBank.atas_nama || '-' }}</div>
+                  </div>
+                  <q-btn flat dense size="sm" color="teal-9" icon="content_copy" label="Salin" @click="copyRekening(selectedRapelBank.norek, selectedRapelBank.bank)" />
+                </div>
+              </template>
+
+              <q-file
+                v-model="rapelFile"
+                outlined dense
+                accept=".jpg,.jpeg,.png,.pdf"
+                label="Pilih 1 Foto / Screenshot Struk Transfer (JPG/PNG/PDF, maks 5MB)"
+                @update:model-value="onPickRapelFile"
+              >
+                <template #prepend><q-icon name="cloud_upload" color="deep-purple-7" /></template>
+              </q-file>
+              <div v-if="rapelPreviewDataUrl" class="text-center q-my-xs">
+                <img :src="rapelPreviewDataUrl" class="proof-thumb" style="max-height: 180px;" alt="Pratinjau bukti rapel" />
+              </div>
+
+              <q-input
+                v-model="rapelForm.catatan_warga"
+                outlined dense
+                label="Catatan Transfer"
+                placeholder="Contoh: IPL C7 Maret sd Des 2026"
+              />
+
+              <q-checkbox
+                v-if="canManage"
+                v-model="rapelForm.langsung_lunas"
+                color="positive"
+                label="Langsung tandai semua bulan Lunas & catat 1 transaksi Kas Masuk di Buku Kas"
+                class="text-body2 text-weight-medium text-teal-10"
+              />
+
+              <div class="row justify-end q-gutter-sm q-mt-md">
+                <q-btn flat label="Batal" v-close-popup />
+                <q-btn
+                  type="submit"
+                  unelevated
+                  color="deep-purple-7"
+                  icon="send"
+                  :disable="rapelPreview.invalid || !rapelPreview.payable.length"
+                  :label="rapelForm.langsung_lunas && canManage ? ('Simpan Lunas (' + rapelPreview.payable.length + ' Bln)') : ('Kirim Rapel (' + rapelPreview.payable.length + ' Bln)')"
+                  :loading="saving"
+                />
               </div>
             </q-form>
           </q-card-section>
@@ -3736,6 +4076,27 @@ window.CompFinanceIpl = {
     const uploadFile = ref(null);
     const uploadPreviewDataUrl = ref('');
     const uploadForm = reactive({ metode_bayar: 'Transfer Bank', rekening_tujuan: '', catatan_warga: '' });
+
+    // State Bayar Rapel / Multi-Bulan
+    const currentYm = SiwargaAPI.currentPeriode();
+    const currentYear = currentYm.split('-')[0];
+    const rapelDialog = ref(false);
+    const loadingKk = ref(false);
+    const kkList = ref([]);
+    const kkSearchFilter = ref('');
+    const allHouseBills = ref([]);
+    const rapelFile = ref(null);
+    const rapelPreviewDataUrl = ref('');
+    const rapelForm = reactive({
+      kk_id: '',
+      periode_mulai: currentYm,
+      periode_selesai: currentYear + '-12',
+      nominal_per_bulan: 150000,
+      metode_bayar: 'Transfer Bank',
+      rekening_tujuan: '',
+      catatan_warga: '',
+      langsung_lunas: true
+    });
     const proofDialog = ref(false);
     const proofItem = ref({});
     const sendingSingleId = ref('');
@@ -3760,6 +4121,7 @@ window.CompFinanceIpl = {
 
     const periodeFilterOptions = SiwargaAPI.buildPeriodeOptions(true);
     const periodeGenerateOptions = SiwargaAPI.buildPeriodeOptions(false);
+    const periodeRapelOptions = SiwargaAPI.buildPeriodeOptions(false, 36, 12);
 
     const columns = [
       { name: 'periode', label: 'Periode', field: 'periode', align: 'left', sortable: true, format: val => SiwargaAPI.formatPeriodeID(val) },
@@ -3798,6 +4160,61 @@ window.CompFinanceIpl = {
     const selectedUploadBank = computed(() => {
       const found = bankSelectOptions.value.find(o => o.value === uploadForm.rekening_tujuan);
       return found ? found.raw : null;
+    });
+
+    const selectedRapelBank = computed(() => {
+      const found = bankSelectOptions.value.find(o => o.value === rapelForm.rekening_tujuan);
+      return found ? found.raw : null;
+    });
+
+    const kkOptions = computed(() =>
+      kkList.value
+        .filter(k => k.status_aktif !== 'Nonaktif')
+        .map(k => ({
+          value: k.id,
+          label: k.no_rumah + ' — ' + k.kepala_keluarga,
+          raw: k
+        }))
+    );
+
+    const filteredKkOptions = computed(() => {
+      const q = (kkSearchFilter.value || '').toLowerCase();
+      if (!q) return kkOptions.value;
+      return kkOptions.value.filter(o => o.label.toLowerCase().includes(q));
+    });
+
+    const rapelPreview = computed(() => {
+      const s = rapelForm.periode_mulai;
+      const e = rapelForm.periode_selesai;
+      if (!s || !e || s > e) {
+        return { invalid: true, months: [], payable: [], skippedLunas: [], grandTotal: 0 };
+      }
+      const range = SiwargaAPI.expandPeriodeRange(s, e);
+      const targetKkId = canManage.value ? String(rapelForm.kk_id || '') : String(props.user.kk_id || '');
+      const existingMap = {};
+      allHouseBills.value.forEach(b => {
+        if (!targetKkId || String(b.kk_id) === targetKkId) {
+          existingMap[String(b.periode)] = b;
+        }
+      });
+      const months = [];
+      const payable = [];
+      const skippedLunas = [];
+      let grandTotal = 0;
+      const baseNom = Number(rapelForm.nominal_per_bulan || props.settings.nominal_ipl_default || 150000);
+      range.forEach(ym => {
+        const ex = existingMap[ym];
+        const isLunas = !!(ex && ex.status === 'Lunas');
+        const nom = ex ? Number(ex.total || ex.nominal || baseNom) : baseNom;
+        months.push({ ym, isLunas, nom });
+        if (isLunas) {
+          skippedLunas.push(ym);
+        } else {
+          payable.push(ym);
+          grandTotal += nom;
+        }
+      });
+      return { invalid: false, months, payable, skippedLunas, grandTotal };
     });
 
     const unpaidRows = computed(() =>
@@ -3879,6 +4296,121 @@ window.CompFinanceIpl = {
         const reader = new FileReader();
         reader.onload = () => { uploadPreviewDataUrl.value = reader.result; };
         reader.readAsDataURL(file);
+      }
+    }
+
+    function filterKkSelect(val, update) {
+      update(() => { kkSearchFilter.value = val || ''; });
+    }
+
+    function onSelectRapelKk(kkId) {
+      const found = kkList.value.find(k => String(k.id) === String(kkId));
+      if (found) {
+        rapelForm.nominal_per_bulan = Number(found.nominal_ipl || props.settings.nominal_ipl_default || 150000);
+      }
+    }
+
+    function setRapelEndCurrent() {
+      rapelForm.periode_selesai = currentYm;
+      if (rapelForm.periode_mulai > currentYm) {
+        rapelForm.periode_mulai = currentYm;
+      }
+    }
+
+    function setRapelEndYear() {
+      rapelForm.periode_selesai = currentYear + '-12';
+    }
+
+    function onPickRapelFile(file) {
+      rapelPreviewDataUrl.value = '';
+      if (file && file.type && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = () => { rapelPreviewDataUrl.value = reader.result; };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    async function openRapelDialog() {
+      rapelFile.value = null;
+      rapelPreviewDataUrl.value = '';
+      rapelForm.metode_bayar = 'Transfer Bank';
+      rapelForm.rekening_tujuan = bankSelectOptions.value[0] ? bankSelectOptions.value[0].value : '';
+      rapelForm.catatan_warga = '';
+      rapelForm.langsung_lunas = canManage.value;
+      rapelForm.periode_mulai = currentYm;
+      rapelForm.periode_selesai = currentYear + '-12';
+      rapelForm.nominal_per_bulan = Number(props.settings.nominal_ipl_default || 150000);
+      rapelForm.kk_id = canManage.value ? '' : (props.user.kk_id || '');
+      rapelDialog.value = true;
+
+      // Muat seluruh tagihan rumah agar preview otomatis mendeteksi bulan yang sudah Lunas
+      loadingKk.value = true;
+      try {
+        const reqs = [SiwargaAPI.call('getTagihanIpl', { periode: 'ALL' })];
+        if (canManage.value && !kkList.value.length) {
+          reqs.push(SiwargaAPI.call('getWargaData'));
+        }
+        const results = await Promise.all(reqs);
+        allHouseBills.value = results[0] || [];
+        if (canManage.value && results[1] && results[1].keluarga) {
+          kkList.value = results[1].keluarga;
+        }
+        // Untuk warga: jika punya tunggakan bulan terlama, otomatis jadikan "Dari Bulan"
+        if (!canManage.value) {
+          const unpaidMine = allHouseBills.value
+            .filter(b => b.status !== 'Lunas' && b.periode)
+            .sort((a, b) => String(a.periode).localeCompare(String(b.periode)));
+          if (unpaidMine.length) {
+            rapelForm.periode_mulai = unpaidMine[0].periode;
+            rapelForm.nominal_per_bulan = Number(unpaidMine[0].nominal || props.settings.nominal_ipl_default || 150000);
+          }
+        }
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message });
+      } finally {
+        loadingKk.value = false;
+      }
+    }
+
+    async function submitRapel() {
+      if (canManage.value && !rapelForm.kk_id) {
+        $q.notify({ type: 'warning', message: 'Pilih rumah warga terlebih dahulu.' });
+        return;
+      }
+      if (rapelPreview.value.invalid || !rapelPreview.value.payable.length) {
+        $q.notify({ type: 'warning', message: 'Tidak ada bulan yang perlu dibayar pada rentang periode tersebut.' });
+        return;
+      }
+      saving.value = true;
+      try {
+        let filePayload = null;
+        if (rapelFile.value) {
+          filePayload = await SiwargaAPI.readFileAsPayload(rapelFile.value);
+        } else if (rapelForm.metode_bayar !== 'Tunai' && !(canManage.value && rapelForm.langsung_lunas)) {
+          throw new Error('Silakan lampirkan foto/PDF bukti transfer pembayaran rapel.');
+        }
+        if (rapelForm.metode_bayar === 'Transfer Bank' && bankSelectOptions.value.length && !rapelForm.rekening_tujuan) {
+          throw new Error('Silakan pilih bank / rekening tujuan transfer terlebih dahulu.');
+        }
+        const res = await SiwargaAPI.call('submitRapelIpl', {
+          kk_id: rapelForm.kk_id,
+          periode_mulai: rapelForm.periode_mulai,
+          periode_selesai: rapelForm.periode_selesai,
+          nominal_per_bulan: rapelForm.nominal_per_bulan,
+          metode_bayar: rapelForm.metode_bayar,
+          rekening_tujuan: rapelForm.rekening_tujuan,
+          catatan_warga: rapelForm.catatan_warga,
+          langsung_lunas: canManage.value ? rapelForm.langsung_lunas : false,
+          filePayload: filePayload
+        });
+        $q.notify({ type: 'positive', message: res.message || 'Pembayaran rapel berhasil diproses!' });
+        rapelDialog.value = false;
+        emit('refresh-badges');
+        loadData();
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message });
+      } finally {
+        saving.value = false;
       }
     }
 
@@ -4008,12 +4540,14 @@ window.CompFinanceIpl = {
 
     return {
       canManage, loading, saving, filterPeriode, filterStatus, search,
-      columns, periodeFilterOptions, periodeGenerateOptions, filteredRows, unpaidRows, activeBankAccounts, bankSelectOptions, selectedUploadBank, summary, genDialog, genForm,
+      columns, periodeFilterOptions, periodeGenerateOptions, periodeRapelOptions, filteredRows, unpaidRows, activeBankAccounts, bankSelectOptions, selectedUploadBank, selectedRapelBank, summary, genDialog, genForm,
       uploadDialog, selectedBill, uploadFile, uploadPreviewDataUrl, uploadForm,
+      currentYm, currentYear, rapelDialog, loadingKk, filteredKkOptions, rapelFile, rapelPreviewDataUrl, rapelForm, rapelPreview,
       proofDialog, proofItem, sendingSingleId, waBulkDialog, selectedWaIds, waBulkTemplate,
       sendingBulkWa, waBulkResult, waLogDialog, loadingLogs, waLogs, waLogColumns,
       statusColor, loadData, openGenerateDialog, submitGenerate,
-      openUploadDialog, onPickFile, submitUpload, openProofPreview, copyRekening,
+      openUploadDialog, onPickFile, submitUpload, openRapelDialog, filterKkSelect, onSelectRapelKk, setRapelEndCurrent, setRapelEndYear, onPickRapelFile, submitRapel,
+      openProofPreview, copyRekening,
       buildWaMeLink, sendSingleWa, openWaBulkDialog, selectAllWa, submitWaBulk, openWaLogDialog,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
     };
@@ -4037,32 +4571,43 @@ window.CompFinanceVerif = {
 
       <q-card flat class="surface-card q-mb-md">
         <q-tabs v-model="tab" dense align="left" active-color="teal-8" indicator-color="teal-8" class="text-grey-7 q-px-md q-pt-sm">
-          <q-tab name="pending" icon="hourglass_top" :label="'Menunggu Verifikasi (' + pendingList.length + ')'" />
+          <q-tab name="pending" icon="hourglass_top" :label="'Menunggu Verifikasi (' + pendingCards.length + ')'" />
           <q-tab name="history" icon="history" :label="'Riwayat Verifikasi (' + historyList.length + ')'" />
         </q-tabs>
         <q-separator />
 
         <q-tab-panels v-model="tab" animated>
           <q-tab-panel name="pending" class="q-pa-md">
-            <div v-if="!pendingList.length" class="text-center q-pa-xl text-grey-6">
+            <div v-if="!pendingCards.length" class="text-center q-pa-xl text-grey-6">
               <q-icon name="verified" size="48px" color="teal-3" />
               <div class="text-subtitle1 text-weight-bold text-grey-8 q-mt-sm">Semua pembayaran sudah diverifikasi!</div>
               <div class="text-caption">Tidak ada antrean bukti transfer yang menunggu saat ini.</div>
             </div>
 
             <div v-else class="row q-col-gutter-md">
-              <div v-for="item in pendingList" :key="item.id" class="col-12 col-md-6">
-                <q-card flat bordered style="border-radius: 12px; border-left: 4px solid #f59e0b;">
+              <div v-for="item in pendingCards" :key="item.cardKey" class="col-12 col-md-6">
+                <q-card flat bordered :style="item.isBatch ? 'border-radius: 12px; border-left: 4px solid #6d28d9;' : 'border-radius: 12px; border-left: 4px solid #f59e0b;'">
                   <q-card-section>
                     <div class="row items-start justify-between">
                       <div>
                         <q-badge color="teal-8" class="q-mr-xs">{{ item.no_rumah }}</q-badge>
-                        <q-badge color="amber-9">Periode {{ formatPeriodeID(item.periode) }}</q-badge>
+                        <q-badge v-if="item.isBatch" color="deep-purple-7" class="q-mr-xs">RAPEL {{ item.count }} BULAN</q-badge>
+                        <q-badge color="amber-9">
+                          {{ item.isBatch ? item.periodeLabel : ('Periode ' + formatPeriodeID(item.periode)) }}
+                        </q-badge>
                         <div class="text-subtitle1 text-weight-bold text-grey-9 q-mt-xs">{{ item.kepala_keluarga }}</div>
                         <div class="text-caption text-grey-6">Diunggah: {{ formatDateID(item.tanggal_upload) }} · Metode: {{ item.metode_bayar || 'Transfer Bank' }}</div>
                       </div>
                       <div class="text-right">
                         <div class="text-h6 text-weight-bolder text-teal-9 mono-num">{{ formatRupiah(item.total) }}</div>
+                        <div v-if="item.isBatch" class="text-caption text-deep-purple-8">Gabungan {{ item.count }} bulan</div>
+                      </div>
+                    </div>
+
+                    <div v-if="item.isBatch" class="q-mt-sm q-pa-xs rounded-borders" style="background:#f5f3ff; border: 1px solid #ddd6fe;">
+                      <div class="text-caption text-deep-purple-9 text-weight-bold q-mb-xs">Rincian Bulan Rapel:</div>
+                      <div class="row q-gutter-xs">
+                        <q-badge v-for="p in item.periods" :key="p" color="deep-purple-6" outline>{{ formatPeriodeID(p) }}</q-badge>
                       </div>
                     </div>
 
@@ -4096,8 +4641,8 @@ window.CompFinanceVerif = {
                   </q-card-section>
                   <q-separator />
                   <q-card-actions class="justify-end q-pa-sm q-gutter-sm">
-                    <q-btn outline color="negative" icon="close" label="Tolak" @click="openActionDialog(item, 'reject')" />
-                    <q-btn unelevated color="positive" icon="check_circle" label="Setujui & Catat Kas" @click="openActionDialog(item, 'approve')" />
+                    <q-btn outline color="negative" icon="close" :label="item.isBatch ? ('Tolak Semua (' + item.count + ' Bln)') : 'Tolak'" @click="openActionDialog(item, 'reject')" />
+                    <q-btn unelevated color="positive" icon="check_circle" :label="item.isBatch ? ('Setujui Semua (' + item.count + ' Bln) & Catat Kas') : 'Setujui & Catat Kas'" @click="openActionDialog(item, 'approve')" />
                   </q-card-actions>
                 </q-card>
               </div>
@@ -4106,6 +4651,12 @@ window.CompFinanceVerif = {
 
           <q-tab-panel name="history" class="q-pa-md">
             <q-table flat bordered :rows="historyList" :columns="histColumns" row-key="id" :pagination="{ rowsPerPage: 10 }">
+              <template #body-cell-periode="props">
+                <q-td :props="props">
+                  <span>{{ formatPeriodeID(props.row.periode) }}</span>
+                  <q-badge v-if="props.row.batch_id" color="deep-purple-7" class="q-ml-xs" style="font-size:10px">Rapel</q-badge>
+                </q-td>
+              </template>
               <template #body-cell-rekening_tujuan="props">
                 <q-td :props="props" class="mono-num text-caption">
                   <span v-if="props.row.rekening_tujuan" class="text-teal-9 text-weight-medium">{{ props.row.rekening_tujuan }}</span>
@@ -4155,7 +4706,7 @@ window.CompFinanceVerif = {
             <div class="q-mb-md">
               <div><strong>Rumah {{ selectedItem.no_rumah }}</strong> — {{ selectedItem.kepala_keluarga }}</div>
               <div class="text-caption text-grey-7">
-                Periode {{ formatPeriodeID(selectedItem.periode) }} · Nominal {{ formatRupiah(selectedItem.total) }}
+                {{ selectedItem.isBatch ? ('Paket Rapel ' + selectedItem.count + ' Bulan (' + selectedItem.periodeLabel + ')') : ('Periode ' + formatPeriodeID(selectedItem.periode)) }} · Nominal {{ formatRupiah(selectedItem.total) }}
                 <q-badge v-if="actionType === 'revert'" class="q-ml-xs" :color="selectedItem.status === 'Lunas' ? 'positive' : 'negative'">{{ selectedItem.status }}</q-badge>
               </div>
               <div v-if="selectedItem.rekening_tujuan" class="text-caption text-teal-9 text-weight-bold mono-num q-mt-xs">
@@ -4163,11 +4714,17 @@ window.CompFinanceVerif = {
               </div>
             </div>
             <q-banner v-if="actionType === 'approve'" dense rounded class="bg-teal-1 text-teal-10 q-mb-md">
-              Tagihan akan ditandai <strong>Lunas</strong> dan transaksi <strong>Kas Masuk (IPL Bulanan)</strong> akan otomatis tercatat di Buku Kas.
+              <span v-if="selectedItem.isBatch">
+                Seluruh <strong>{{ selectedItem.count }} bulan</strong> dalam paket rapel akan ditandai <strong>Lunas</strong> dan <strong>1 transaksi Kas Masuk gabungan ({{ formatRupiah(selectedItem.total) }})</strong> akan otomatis tercatat di Buku Kas.
+              </span>
+              <span v-else>
+                Tagihan akan ditandai <strong>Lunas</strong> dan transaksi <strong>Kas Masuk (IPL Bulanan)</strong> akan otomatis tercatat di Buku Kas.
+              </span>
             </q-banner>
             <q-banner v-if="actionType === 'revert' && selectedItem.status === 'Lunas'" dense rounded class="bg-amber-1 text-amber-10 q-mb-md" style="border: 1px solid #fcd34d;">
               <template #avatar><q-icon name="warning" color="amber-9" /></template>
               Status <strong>Lunas</strong> akan dibatalkan dan <strong>transaksi Kas Masuk IPL terkait akan otomatis dihapus</strong> dari Buku Kas agar saldo tetap akurat.
+              <span v-if="selectedItem.batch_id"> (Karena ini bagian dari paket <strong>Rapel</strong>, seluruh bulan dalam paket rapel yang sama akan ikut direvisi agar saldo kas tetap sinkron.)</span>
             </q-banner>
             <q-option-group
               v-if="actionType === 'revert'"
@@ -4227,6 +4784,42 @@ window.CompFinanceVerif = {
     });
 
     const pendingList = computed(() => allRows.value.filter(r => r.status === 'Menunggu Verifikasi'));
+    const pendingCards = computed(() => {
+      const grouped = {};
+      const singles = [];
+      pendingList.value.forEach(r => {
+        if (r.batch_id) {
+          if (!grouped[r.batch_id]) grouped[r.batch_id] = [];
+          grouped[r.batch_id].push(r);
+        } else {
+          singles.push(r);
+        }
+      });
+      const cards = [];
+      Object.keys(grouped).forEach(bid => {
+        const list = grouped[bid].slice().sort((a, b) => String(a.periode || '').localeCompare(String(b.periode || '')));
+        if (list.length === 1) {
+          cards.push(Object.assign({ cardKey: list[0].id, isBatch: false, count: 1 }, list[0]));
+        } else {
+          const first = list[0];
+          const last = list[list.length - 1];
+          const totalSum = list.reduce((s, x) => s + Number(x.total || x.nominal || 0), 0);
+          cards.push(Object.assign({}, first, {
+            cardKey: 'BATCH-' + bid,
+            isBatch: true,
+            batch_id: bid,
+            count: list.length,
+            periods: list.map(x => x.periode),
+            periodeLabel: SiwargaAPI.formatPeriodeID(first.periode) + ' s/d ' + SiwargaAPI.formatPeriodeID(last.periode),
+            total: totalSum
+          }));
+        }
+      });
+      singles.forEach(r => {
+        cards.push(Object.assign({ cardKey: r.id, isBatch: false, count: 1 }, r));
+      });
+      return cards;
+    });
     const historyList = computed(() => allRows.value.filter(r => r.status === 'Lunas' || r.status === 'Ditolak'));
 
     const histColumns = [
@@ -4268,17 +4861,19 @@ window.CompFinanceVerif = {
       }
       saving.value = true;
       try {
-        await SiwargaAPI.call('verifyIplPayment', {
+        const res = await SiwargaAPI.call('verifyIplPayment', {
           tagihan_id: selectedItem.value.id,
+          batch_id: selectedItem.value.isBatch ? selectedItem.value.batch_id : (actionType.value === 'revert' && selectedItem.value.batch_id ? selectedItem.value.batch_id : ''),
           action: actionType.value,
           target_status: revertTargetStatus.value,
           catatan_bendahara: catatanBendahara.value
         });
+        const cnt = (res && res.updatedCount && res.updatedCount > 1) ? (' (' + res.updatedCount + ' bulan)') : '';
         const msg = actionType.value === 'approve'
-          ? 'Pembayaran disetujui Lunas & otomatis tercatat di Kas Masuk!'
+          ? ('Pembayaran' + cnt + ' disetujui Lunas & otomatis tercatat di Kas Masuk!')
           : (actionType.value === 'revert'
-            ? ('Verifikasi direvisi: dikembalikan ke status ' + revertTargetStatus.value + '.')
-            : 'Bukti ditolak. Warga dapat mengunggah ulang bukti pembayaran.');
+            ? ('Verifikasi' + cnt + ' direvisi: dikembalikan ke status ' + revertTargetStatus.value + '.')
+            : ('Bukti' + cnt + ' ditolak. Warga dapat mengunggah ulang bukti pembayaran.'));
         $q.notify({ type: 'positive', message: msg });
         actionDialog.value = false;
         emit('refresh-badges');
@@ -4296,7 +4891,7 @@ window.CompFinanceVerif = {
     onMounted(loadData);
 
     return {
-      tab, loading, saving, canRevert, pendingList, historyList, histColumns,
+      tab, loading, saving, canRevert, pendingList, pendingCards, historyList, histColumns,
       actionDialog, actionType, selectedItem, catatanBendahara, revertTargetStatus,
       loadData, openActionDialog, submitVerify,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
