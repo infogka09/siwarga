@@ -1527,7 +1527,7 @@ window.CompDashboard = {
             </div>
           </div>
           <div class="row q-gutter-sm q-mt-sm">
-            <q-btn v-if="canSee('finance_ipl')" unelevated color="white" text-color="teal-9" icon="receipt_long" label="Tagihan IPL" @click="$emit('navigate', 'finance_ipl')" />
+            <q-btn v-if="canSee('finance_ipl')" unelevated color="white" text-color="teal-9" icon="receipt_long" :label="menuLabel('finance_ipl')" @click="$emit('navigate', 'finance_ipl')" />
             <q-btn v-if="canSee('surat')" outline color="white" icon="description" label="Ajukan Surat" @click="$emit('navigate', 'surat')" />
           </div>
         </div>
@@ -1683,7 +1683,7 @@ window.CompDashboard = {
         </div>
 
         <div class="col-12 col-sm-6 col-md-3">
-          <q-card flat class="stat-card q-pa-md cursor-pointer" @click="$emit('navigate', user.role === 'warga' ? 'surat' : 'finance_verif')">
+          <q-card flat class="stat-card q-pa-md cursor-pointer" @click="goActionCard">
             <div class="row items-center justify-between">
               <div>
                 <div class="text-caption text-grey-6 text-weight-medium">Perlu Tindakan</div>
@@ -1709,7 +1709,7 @@ window.CompDashboard = {
                 <div class="text-subtitle1 text-weight-bold">Arus Kas RT (Masuk vs Keluar)</div>
                 <div class="text-caption text-grey-6">Ringkasan mutasi kas bulanan SIWARGA Finance</div>
               </div>
-              <q-btn flat dense no-caps color="teal-8" label="Buka Buku Kas" icon-right="chevron_right" @click="$emit('navigate', 'finance_report')" />
+              <q-btn v-if="canSee('finance_report')" flat dense no-caps color="teal-8" :label="'Buka ' + menuLabel('finance_report')" icon-right="chevron_right" @click="$emit('navigate', 'finance_report')" />
             </div>
             <div style="position: relative; height: 260px;">
               <canvas ref="kasChartCanvas"></canvas>
@@ -1721,7 +1721,7 @@ window.CompDashboard = {
           <q-card flat class="surface-card q-pa-md q-mb-md">
             <div class="row items-center justify-between q-mb-sm">
               <div class="text-subtitle1 text-weight-bold">Pengumuman Terbaru</div>
-              <q-btn flat dense no-caps size="sm" color="teal-8" label="Lihat Semua" @click="$emit('navigate', 'info')" />
+              <q-btn v-if="canSee('info')" flat dense no-caps size="sm" color="teal-8" label="Lihat Semua" @click="$emit('navigate', 'info')" />
             </div>
             <q-list separator v-if="dashboard.latestPengumuman && dashboard.latestPengumuman.length">
               <q-item v-for="item in dashboard.latestPengumuman" :key="item.id" class="q-px-none">
@@ -1741,7 +1741,7 @@ window.CompDashboard = {
           <q-card flat class="surface-card q-pa-md">
             <div class="row items-center justify-between q-mb-sm">
               <div class="text-subtitle1 text-weight-bold">Agenda Kegiatan RT</div>
-              <q-btn flat dense no-caps size="sm" color="teal-8" label="Lihat Agenda" @click="$emit('navigate', 'kegiatan')" />
+              <q-btn v-if="canSee('kegiatan')" flat dense no-caps size="sm" color="teal-8" label="Lihat Agenda" @click="$emit('navigate', 'kegiatan')" />
             </div>
             <q-list separator v-if="dashboard.upcomingKegiatan && dashboard.upcomingKegiatan.length">
               <q-item v-for="k in dashboard.upcomingKegiatan" :key="k.id" class="q-px-none">
@@ -1873,13 +1873,28 @@ window.CompDashboard = {
       emit('navigate', 'finance_ipl');
     }
 
+    function menuLabel(menuKey) {
+      const cfg = SiwargaAPI.parseMenuConfig(props.settings);
+      return (cfg[menuKey] && cfg[menuKey].label) || menuKey;
+    }
+
+    function goActionCard() {
+      if (props.user && props.user.role === 'warga') {
+        if (canSee('surat')) emit('navigate', 'surat');
+        else if (canSee('finance_ipl')) emit('navigate', 'finance_ipl');
+      } else {
+        if (canSee('finance_verif')) emit('navigate', 'finance_verif');
+        else if (canSee('finance_ipl')) emit('navigate', 'finance_ipl');
+      }
+    }
+
     onMounted(loadDashboard);
     onBeforeUnmount(() => {
       if (chartInstance) chartInstance.destroy();
     });
 
     return {
-      loading, unpaidDialog, dashboard, stats, activeBankAccounts, myUnpaidTotal, kasChartCanvas, canSee,
+      loading, unpaidDialog, dashboard, stats, activeBankAccounts, myUnpaidTotal, kasChartCanvas, canSee, menuLabel, goActionCard,
       copyRekening, goPayBill, goAllIpl,
       formatRupiah: SiwargaAPI.formatRupiah,
       formatDateID: SiwargaAPI.formatDateID,
@@ -5371,6 +5386,7 @@ window.CompSettings = {
         kkList.value = (wRes && wRes.keluarga) || [];
         if (adminCfg) {
           Object.assign(form, adminCfg);
+          emit('settings-updated', adminCfg);
           const parsedBanks = SiwargaAPI.parseBankAccounts(adminCfg);
           bankAccounts.value = parsedBanks.length ? parsedBanks : [{ bank: '', norek: '', atas_nama: '', aktif: true }];
           const parsedMenus = SiwargaAPI.parseMenuConfig(adminCfg);
@@ -6458,6 +6474,8 @@ window.CompProfile = {
           bank_norek: '',
           bank_atas_nama: '',
           bank_accounts_json: '',
+          menu_config_json: '',
+          kontak_darurat: '',
           qris_info: ''
         });
 
@@ -6578,9 +6596,21 @@ window.CompProfile = {
           }
         }
 
-        function onImpersonateStarted(res) {
+        async function refreshPublicConfig() {
+          try {
+            const cfg = await SiwargaAPI.call('getPublicConfig');
+            if (cfg && typeof cfg === 'object') {
+              Object.assign(settings, cfg);
+            }
+          } catch (err) {
+            console.error('refreshPublicConfig error:', err);
+          }
+        }
+
+        async function onImpersonateStarted(res) {
           if (!res || !res.token || !res.user) return;
           SiwargaAPI.setToken(res.token);
+          await refreshPublicConfig();
           currentUser.value = res.user;
           activePage.value = 'dashboard';
           pendingVerifCount.value = 0;
@@ -6596,6 +6626,7 @@ window.CompProfile = {
           try {
             const res = await SiwargaAPI.call('stopImpersonate');
             SiwargaAPI.setToken(res.token);
+            await refreshPublicConfig();
             currentUser.value = res.user;
             activePage.value = 'settings';
             $q.notify({
@@ -6612,8 +6643,7 @@ window.CompProfile = {
 
         async function bootstrap() {
           try {
-            const cfg = await SiwargaAPI.call('getPublicConfig');
-            Object.assign(settings, cfg || {});
+            await refreshPublicConfig();
             const token = SiwargaAPI.getToken();
             if (token) {
               const sess = await SiwargaAPI.call('checkSession');
@@ -6643,6 +6673,7 @@ window.CompProfile = {
               else localStorage.removeItem('siwarga_saved_username');
             } catch (e) {}
             SiwargaAPI.setToken(res.token);
+            await refreshPublicConfig();
             currentUser.value = res.user;
             activePage.value = 'dashboard';
             $q.notify({ type: 'positive', message: 'Selamat datang, ' + res.user.nama });
