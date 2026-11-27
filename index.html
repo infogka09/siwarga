@@ -1073,6 +1073,12 @@
           throw new Error('Username / Nomor Rumah atau password salah. Sisa percobaan: ' + rem + ' kali.');
         }
         delete db.loginAttempts[uname];
+        const pad2 = function (n) { return n < 10 ? '0' + n : String(n); };
+        const dt = new Date();
+        const localNow = dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate()) +
+          'T' + pad2(dt.getHours()) + ':' + pad2(dt.getMinutes()) + ':' + pad2(dt.getSeconds());
+        found.last_login_at = localNow;
+        found.login_count = (Number(found.login_count) || 0) + 1;
         const weakList = ['gka123', 'warga123', 'admin123', 'bendahara123', 'superadmin123'];
         const cleanHome = String(found.no_rumah || found.username || 'WARGA').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const patternPwd = 'Gka#' + cleanHome + '@26';
@@ -1142,7 +1148,13 @@
         return { success: true, message: 'Database lokal siap digunakan.' };
       case 'listUsers':
         needAuth(['admin']);
-        return db.users.map(function (u) { const c = Object.assign({}, u); delete c.password; return c; });
+        return db.users.map(function (u) {
+          const c = Object.assign({}, u);
+          delete c.password;
+          c.last_login_at = c.last_login_at || '';
+          c.login_count = Number(c.login_count) || 0;
+          return c;
+        });
       case 'saveUser': {
         needAuth(['admin']);
         if (payload.id) {
@@ -1154,7 +1166,7 @@
             return db.users[idx];
           }
         }
-        const obj = { id: mockId('USR'), username: payload.username, nama: payload.nama, role: payload.role || 'warga', kk_id: payload.kk_id || '', no_rumah: payload.no_rumah || '', password: payload.password || 'warga123', status: payload.status || 'Aktif', created_at: now };
+        const obj = { id: mockId('USR'), username: payload.username, nama: payload.nama, role: payload.role || 'warga', kk_id: payload.kk_id || '', no_rumah: payload.no_rumah || '', password: payload.password || 'warga123', status: payload.status || 'Aktif', created_at: now, last_login_at: '', login_count: 0 };
         db.users.push(obj);
         saveMockDb(db);
         return obj;
@@ -6590,7 +6602,7 @@ window.CompSettings = {
           </q-tab-panel>
 
           <q-tab-panel name="users" class="q-pa-md">
-            <div class="row items-center justify-between q-mb-md q-gutter-sm">
+            <div class="row items-center justify-between q-mb-sm q-gutter-sm">
               <div class="text-caption text-grey-7">
                 Pola password awal warga: <code>Gka#&lt;NoRumah&gt;@26</code> (contoh <code>A109</code> → <code>Gka#A109@26</code>)
               </div>
@@ -6599,23 +6611,145 @@ window.CompSettings = {
                 <q-btn unelevated color="teal-8" icon="person_add" label="Tambah Akun" @click="openUserDialog()" />
               </div>
             </div>
-            <div class="row q-col-gutter-sm q-mb-md">
-              <div class="col-12 col-sm-6">
+
+            <!-- Ringkasan Status Login (Klik untuk filter cepat) -->
+            <div class="row q-gutter-xs q-mb-md items-center">
+              <q-chip
+                clickable dense
+                :outline="filterUserLogin !== 'Semua'"
+                color="blue-grey-7" :text-color="filterUserLogin === 'Semua' ? 'white' : 'blue-grey-8'"
+                icon="groups"
+                @click="filterUserLogin = 'Semua'"
+              >
+                Total: <strong class="q-ml-xs">{{ userLoginStats.total }}</strong>
+              </q-chip>
+              <q-chip
+                clickable dense
+                :outline="filterUserLogin !== 'Hari Ini'"
+                color="positive" :text-color="filterUserLogin === 'Hari Ini' ? 'white' : 'green-9'"
+                icon="today"
+                @click="filterUserLogin = 'Hari Ini'"
+              >
+                Login Hari Ini: <strong class="q-ml-xs">{{ userLoginStats.hariIni }}</strong>
+              </q-chip>
+              <q-chip
+                clickable dense
+                :outline="filterUserLogin !== 'Sudah Login'"
+                color="teal-7" :text-color="filterUserLogin === 'Sudah Login' ? 'white' : 'teal-9'"
+                icon="login"
+                @click="filterUserLogin = 'Sudah Login'"
+              >
+                Sudah Pernah Login: <strong class="q-ml-xs">{{ userLoginStats.sudahLogin }}</strong>
+              </q-chip>
+              <q-chip
+                clickable dense
+                :outline="filterUserLogin !== 'Belum Pernah Login'"
+                color="grey-7" :text-color="filterUserLogin === 'Belum Pernah Login' ? 'white' : 'grey-8'"
+                icon="schedule"
+                @click="filterUserLogin = 'Belum Pernah Login'"
+              >
+                Belum Pernah Login: <strong class="q-ml-xs">{{ userLoginStats.belumLogin }}</strong>
+              </q-chip>
+            </div>
+
+            <div class="row q-col-gutter-sm q-mb-md items-center">
+              <div class="col-12 col-sm-5">
                 <q-input v-model="searchUser" outlined dense clearable placeholder="Cari username, nomor rumah, atau nama warga...">
                   <template #prepend><q-icon name="search" /></template>
                 </q-input>
               </div>
-              <div class="col-12 col-sm-4 col-md-3">
+              <div class="col-6 col-sm-3">
                 <q-select v-model="filterUserRole" :options="['Semua', 'warga', 'bendahara', 'admin', 'superadmin']" outlined dense label="Filter Role" />
+              </div>
+              <div class="col-6 col-sm-3">
+                <q-select v-model="filterUserLogin" :options="['Semua', 'Hari Ini', 'Sudah Login', 'Belum Pernah Login']" outlined dense label="Status Login" />
+              </div>
+              <div class="col-12 col-sm-1 row justify-end">
+                <q-btn outline color="teal-8" icon="refresh" :loading="loadingUsers" @click="loadUsers" :class="$q.screen.lt.sm ? 'full-width' : ''" :label="$q.screen.lt.sm ? 'Muat Ulang Status Login' : ''">
+                  <q-tooltip>Muat ulang status login terbaru</q-tooltip>
+                </q-btn>
               </div>
             </div>
 
-            <q-table flat bordered :rows="filteredUsers" :columns="userColumns" row-key="id" :pagination="{ rowsPerPage: 10 }">
+            <!-- Tampilan Mobile/Tablet Card List -->
+            <div v-if="$q.screen.lt.md" class="q-gutter-sm">
+              <div v-if="!filteredUsers.length" class="text-center text-grey-6 q-pa-lg bg-grey-1 rounded-borders">
+                Tidak ada akun pengguna yang sesuai filter.
+              </div>
+              <q-card v-for="u in filteredUsers" :key="u.id" flat bordered class="rounded-borders">
+                <q-card-section class="q-pa-sm">
+                  <div class="row items-center justify-between no-wrap q-gutter-xs">
+                    <div class="row items-center q-gutter-xs">
+                      <q-badge color="teal-8" class="text-weight-bold">{{ u.no_rumah || u.username }}</q-badge>
+                      <span class="text-weight-bold text-grey-9">{{ u.nama }}</span>
+                    </div>
+                    <q-badge :color="u.role === 'superadmin' ? 'deep-purple-8' : (u.role === 'admin' ? 'teal-9' : (u.role === 'bendahara' ? 'indigo-8' : 'blue-grey-7'))">
+                      {{ u.role }}
+                    </q-badge>
+                  </div>
+                  <div class="text-caption text-grey-6 q-mt-xs">
+                    Username: <code>{{ u.username }}</code> · Status: <strong>{{ u.status || 'Aktif' }}</strong>
+                  </div>
+                  <div class="row items-center justify-between q-mt-sm q-pt-xs" style="border-top: 1px solid #eef2f6;">
+                    <div>
+                      <template v-if="u.last_login_at">
+                        <q-badge :color="isLoginToday(u.last_login_at) ? 'positive' : 'teal-7'" class="q-mr-xs">
+                          <q-icon :name="isLoginToday(u.last_login_at) ? 'check_circle' : 'login'" size="11px" class="q-mr-xs" />
+                          {{ isLoginToday(u.last_login_at) ? 'Hari Ini' : 'Sudah Login' }}
+                        </q-badge>
+                        <span v-if="u.login_count > 0" class="text-caption text-grey-6">({{ u.login_count }}x)</span>
+                        <div class="text-caption text-grey-9 text-weight-medium q-mt-xs">
+                          <q-icon name="schedule" size="13px" color="teal-8" class="q-mr-xs" />{{ formatDateTimeID(u.last_login_at) }} WIB
+                        </div>
+                      </template>
+                      <template v-else>
+                        <q-badge outline color="grey-6">Belum Login</q-badge>
+                      </template>
+                    </div>
+                    <div class="row items-center q-gutter-xs">
+                      <q-btn v-if="canLoginAs(u)" outline dense size="sm" color="deep-purple-8" icon="switch_account" label="Login As" :loading="impersonatingId === u.id" @click="confirmLoginAs(u)" />
+                      <q-btn v-if="isSuperadmin || u.role !== 'superadmin'" flat dense round icon="edit" color="indigo-7" @click="openUserDialog(u)" />
+                      <q-btn v-if="isSuperadmin || u.role !== 'superadmin'" flat dense round icon="delete" color="negative" @click="deleteUser(u)" />
+                    </div>
+                  </div>
+                </q-card-section>
+              </q-card>
+            </div>
+
+            <!-- Tampilan Desktop Table -->
+            <q-table v-else flat bordered :rows="filteredUsers" :columns="userColumns" row-key="id" :loading="loadingUsers" :pagination="{ rowsPerPage: 15 }">
               <template #body-cell-role="props">
                 <q-td :props="props">
                   <q-badge :color="props.row.role === 'superadmin' ? 'deep-purple-8' : (props.row.role === 'admin' ? 'teal-9' : (props.row.role === 'bendahara' ? 'indigo-8' : 'blue-grey-7'))">
                     {{ props.row.role }}
                   </q-badge>
+                </q-td>
+              </template>
+              <template #body-cell-status="props">
+                <q-td :props="props">
+                  <q-badge :color="props.row.status === 'Nonaktif' ? 'negative' : 'green-7'" outline>
+                    {{ props.row.status || 'Aktif' }}
+                  </q-badge>
+                </q-td>
+              </template>
+              <template #body-cell-last_login_at="props">
+                <q-td :props="props">
+                  <template v-if="props.row.last_login_at">
+                    <div class="row items-center no-wrap q-gutter-xs">
+                      <q-badge :color="isLoginToday(props.row.last_login_at) ? 'positive' : 'teal-7'">
+                        <q-icon :name="isLoginToday(props.row.last_login_at) ? 'check_circle' : 'login'" size="11px" class="q-mr-xs" />
+                        {{ isLoginToday(props.row.last_login_at) ? 'Hari Ini' : 'Sudah Login' }}
+                      </q-badge>
+                      <span v-if="props.row.login_count > 0" class="text-caption text-grey-6">({{ props.row.login_count }}x)</span>
+                    </div>
+                    <div class="text-caption text-grey-9 text-weight-medium q-mt-xs" style="white-space: nowrap;">
+                      <q-icon name="schedule" size="13px" color="teal-8" class="q-mr-xs" />{{ formatDateTimeID(props.row.last_login_at) }} WIB
+                    </div>
+                  </template>
+                  <template v-else>
+                    <q-badge outline color="grey-6">Belum Login</q-badge>
+                    <div class="text-caption text-grey-5">Belum pernah masuk</div>
+                  </template>
                 </q-td>
               </template>
               <template #body-cell-actions="props">
@@ -6727,6 +6861,8 @@ window.CompSettings = {
     const impersonatingId = ref('');
     const searchUser = ref('');
     const filterUserRole = ref('Semua');
+    const filterUserLogin = ref('Semua');
+    const loadingUsers = ref(false);
     const users = ref([]);
 
     const waProviderOptions = [
@@ -6747,21 +6883,52 @@ window.CompSettings = {
 
     const userColumns = [
       { name: 'username', label: 'Username', field: 'username', align: 'left', sortable: true },
-      { name: 'nama', label: 'Nama', field: 'nama', align: 'left' },
-      { name: 'role', label: 'Role', field: 'role', align: 'center' },
-      { name: 'no_rumah', label: 'Rumah', field: 'no_rumah', align: 'center' },
-      { name: 'status', label: 'Status', field: 'status', align: 'center' },
+      { name: 'nama', label: 'Nama', field: 'nama', align: 'left', sortable: true },
+      { name: 'role', label: 'Role', field: 'role', align: 'center', sortable: true },
+      { name: 'no_rumah', label: 'Rumah', field: 'no_rumah', align: 'center', sortable: true },
+      { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
+      { name: 'last_login_at', label: 'Login Terakhir', field: 'last_login_at', align: 'left', sortable: true },
       { name: 'actions', label: 'Aksi', field: 'id', align: 'right' }
     ];
+
+    function getLocalTodayStr() {
+      const d = new Date();
+      const pad = n => (n < 10 ? '0' + n : String(n));
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+
+    function isLoginToday(isoStr) {
+      if (!isoStr) return false;
+      return String(isoStr).trim().substring(0, 10) === getLocalTodayStr();
+    }
 
     const kkOptions = computed(() => kkList.value.map(k => ({
       value: k.id, label: k.no_rumah + ' — ' + k.kepala_keluarga, no_rumah: k.no_rumah
     })));
 
+    const userLoginStats = computed(() => {
+      const base = users.value.filter(u => filterUserRole.value === 'Semua' || u.role === filterUserRole.value);
+      let sudahLogin = 0;
+      let hariIni = 0;
+      let belumLogin = 0;
+      base.forEach(u => {
+        if (u.last_login_at) {
+          sudahLogin++;
+          if (isLoginToday(u.last_login_at)) hariIni++;
+        } else {
+          belumLogin++;
+        }
+      });
+      return { total: base.length, sudahLogin, hariIni, belumLogin };
+    });
+
     const filteredUsers = computed(() => {
       const q = (searchUser.value || '').toLowerCase();
       return users.value.filter(u => {
         if (filterUserRole.value !== 'Semua' && u.role !== filterUserRole.value) return false;
+        if (filterUserLogin.value === 'Hari Ini' && !isLoginToday(u.last_login_at)) return false;
+        if (filterUserLogin.value === 'Sudah Login' && !u.last_login_at) return false;
+        if (filterUserLogin.value === 'Belum Pernah Login' && !!u.last_login_at) return false;
         if (!q) return true;
         return [u.username, u.nama, u.no_rumah, u.role].some(v => String(v || '').toLowerCase().includes(q));
       });
@@ -6873,6 +7040,7 @@ window.CompSettings = {
     }
 
     async function loadUsers() {
+      loadingUsers.value = true;
       try {
         const [uRes, wRes, adminCfg] = await Promise.all([
           SiwargaAPI.call('listUsers'),
@@ -6891,6 +7059,8 @@ window.CompSettings = {
         }
       } catch (err) {
         $q.notify({ type: 'negative', message: err.message });
+      } finally {
+        loadingUsers.value = false;
       }
     }
 
@@ -7033,9 +7203,10 @@ window.CompSettings = {
     return {
       isSuperadmin, roleOptions, tab, saving, savingMenus, form, bankAccounts, menuState, menuGroups,
       logoFile, logoPreview, showWaToken, testWaPhone, testingWa, upgradingPwds, impersonatingId,
-      searchUser, filterUserRole, filteredUsers,
+      searchUser, filterUserRole, filterUserLogin, loadingUsers, userLoginStats, filteredUsers,
       waProviderOptions, waVars, waAutoReminderBool,
       users, userColumns, kkOptions, userDialog, userForm,
+      isLoginToday, formatDateTimeID: SiwargaAPI.formatDateTimeID, loadUsers,
       addBankAccount, removeBankAccount, resetMenuDefaults, saveMenuConfig,
       fillDefaultWargaPwd, confirmUpgradeWargaPasswords, canLoginAs, confirmLoginAs,
       onPickLogo, resetLogo, onChangeWaProvider, appendWaVar, runTestWa,
