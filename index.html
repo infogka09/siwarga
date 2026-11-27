@@ -775,10 +775,102 @@
       merged[key] = {
         enabled: key === 'dashboard' ? true : (cur.enabled !== undefined ? Boolean(cur.enabled) : def.enabled),
         label: (cur.label && String(cur.label).trim()) ? String(cur.label).trim() : def.label,
-        roles: Array.isArray(cur.roles) ? cur.roles.slice() : def.roles.slice()
+        roles: Array.isArray(cur.roles) ? cur.roles.slice() : def.roles.slice(),
+        denied_roles: Array.isArray(cur.denied_roles) ? cur.denied_roles.slice() : []
       };
     });
     return merged;
+  }
+
+  const CORE_ROLES = [
+    { code: 'warga', label: 'Warga RT', base_role: 'warga', color: 'blue-grey-7', core: true },
+    { code: 'bendahara', label: 'Bendahara', base_role: 'bendahara', color: 'indigo-8', core: true },
+    { code: 'admin', label: 'Admin RT', base_role: 'admin', color: 'teal-9', core: true },
+    { code: 'superadmin', label: 'Superadmin', base_role: 'superadmin', color: 'deep-purple-8', core: true }
+  ];
+
+  const DEFAULT_CUSTOM_ROLES = [
+    { code: 'ketua_rt', label: 'Ketua RT', base_role: 'admin', color: 'teal-8' },
+    { code: 'penasehat', label: 'Penasehat', base_role: 'warga', color: 'blue-grey-8' },
+    { code: 'sekretaris', label: 'Sekretaris', base_role: 'admin', color: 'cyan-9' },
+    { code: 'keamanan_ketertiban', label: 'Keamanan dan Ketertiban', base_role: 'warga', color: 'amber-9' },
+    { code: 'sarana_lingkungan', label: 'Sarana dan Lingkungan', base_role: 'warga', color: 'green-8' },
+    { code: 'humas_komunikasi', label: 'Humas dan Komunikasi', base_role: 'warga', color: 'light-blue-9' },
+    { code: 'sosial_kemasyarakatan', label: 'Sosial dan Kemasyarakatan', base_role: 'warga', color: 'pink-8' },
+    { code: 'pemuda_olahraga', label: 'Pemuda dan Olahraga', base_role: 'warga', color: 'deep-orange-8' },
+    { code: 'kerohanian', label: 'Kerohanian', base_role: 'warga', color: 'purple-8' }
+  ];
+
+  function parseCustomRoles(settingsObj) {
+    try {
+      if (settingsObj && settingsObj.custom_roles_json) {
+        const parsed = JSON.parse(settingsObj.custom_roles_json);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(function (r) { return r && r.code && r.label; }).map(function (r) {
+            return {
+              code: String(r.code).trim().toLowerCase(),
+              label: String(r.label).trim(),
+              base_role: (r.base_role === 'admin' || r.base_role === 'bendahara' || r.base_role === 'warga') ? r.base_role : 'warga',
+              color: String(r.color || 'teal-8').trim() || 'teal-8',
+              core: false
+            };
+          });
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_CUSTOM_ROLES.map(function (r) { return Object.assign({ core: false }, r); });
+  }
+
+  function getAllRoles(settingsObj, includeSuperadmin) {
+    const cores = CORE_ROLES.filter(function (r) { return includeSuperadmin || r.code !== 'superadmin'; });
+    return cores.concat(parseCustomRoles(settingsObj));
+  }
+
+  function getRoleMeta(roleCode, settingsObj) {
+    const code = String(roleCode || 'warga').trim().toLowerCase();
+    const all = getAllRoles(settingsObj, true);
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].code === code) return all[i];
+    }
+    return { code: code, label: roleCode || 'Warga RT', base_role: 'warga', color: 'blue-grey-7', core: false };
+  }
+
+  function getEffectiveRole(user, settingsObj) {
+    if (!user) return 'warga';
+    const r = String(user.role || 'warga').trim().toLowerCase();
+    if (r === 'superadmin' || r === 'admin' || r === 'bendahara' || r === 'warga') return r;
+    if (settingsObj && settingsObj.custom_roles_json) {
+      return getRoleMeta(r, settingsObj).base_role || 'warga';
+    }
+    if (user.base_role) return String(user.base_role).trim().toLowerCase();
+    return getRoleMeta(r, settingsObj).base_role || 'warga';
+  }
+
+  function isAdminRole(user, settingsObj) {
+    const eff = getEffectiveRole(user, settingsObj);
+    return eff === 'superadmin' || eff === 'admin';
+  }
+
+  function isFinanceStaff(user, settingsObj) {
+    const eff = getEffectiveRole(user, settingsObj);
+    return eff === 'superadmin' || eff === 'admin' || eff === 'bendahara';
+  }
+
+  function isWargaRole(user, settingsObj) {
+    return getEffectiveRole(user, settingsObj) === 'warga';
+  }
+
+  function canAccessMenu(menuKey, user, settingsObj) {
+    const cfg = parseMenuConfig(settingsObj);
+    const item = cfg[menuKey];
+    if (!item) return true;
+    if (!item.enabled) return false;
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (Array.isArray(item.roles) && item.roles.indexOf(user.role) !== -1) return true;
+    if (Array.isArray(item.denied_roles) && item.denied_roles.indexOf(user.role) !== -1) return false;
+    const eff = getEffectiveRole(user, settingsObj);
+    return Array.isArray(item.roles) && item.roles.indexOf(eff) !== -1;
   }
 
   function parseBankAccounts(settingsObj) {
@@ -1089,6 +1181,8 @@
         const newTok = 'MOCK_' + Date.now() + '_' + found.id;
         const safeUser = {
           id: found.id, username: found.username, nama: found.nama, role: found.role,
+          base_role: getRoleMeta(found.role, db.settings).base_role,
+          role_label: getRoleMeta(found.role, db.settings).label,
           kk_id: found.kk_id, no_rumah: found.no_rumah,
           must_change_password: weakList.indexOf(found.password) !== -1 || found.password === patternPwd
         };
@@ -1140,10 +1234,18 @@
           sanitized[key] = {
             enabled: key === 'dashboard' ? true : (item.enabled !== undefined ? Boolean(item.enabled) : def.enabled),
             label: String(item.label || '').trim() || def.label,
-            roles: roles
+            roles: roles,
+            denied_roles: Array.isArray(item.denied_roles) ? item.denied_roles.slice() : []
           };
         });
         db.settings.menu_config_json = JSON.stringify(sanitized);
+        saveMockDb(db);
+        return Object.assign({}, db.settings);
+      }
+      case 'saveCustomRoles': {
+        needAuth(['superadmin']);
+        const list = Array.isArray(payload && payload.roles) ? payload.roles : [];
+        db.settings.custom_roles_json = JSON.stringify(list);
         saveMockDb(db);
         return Object.assign({}, db.settings);
       }
@@ -1884,7 +1986,17 @@
     isMockMode: !isGasEnv && !getRemoteApiUrl(),
     isRemoteApiMode: !isGasEnv && !!getRemoteApiUrl(),
     DEFAULT_MENU_CONFIG: DEFAULT_MENU_CONFIG,
+    CORE_ROLES: CORE_ROLES,
+    DEFAULT_CUSTOM_ROLES: DEFAULT_CUSTOM_ROLES,
     parseMenuConfig: parseMenuConfig,
+    parseCustomRoles: parseCustomRoles,
+    getAllRoles: getAllRoles,
+    getRoleMeta: getRoleMeta,
+    getEffectiveRole: getEffectiveRole,
+    isAdminRole: isAdminRole,
+    isFinanceStaff: isFinanceStaff,
+    isWargaRole: isWargaRole,
+    canAccessMenu: canAccessMenu,
     parseBankAccounts: parseBankAccounts,
     formatBankInfo: formatBankInfoClient,
     getToken: function () { return localStorage.getItem(TOKEN_KEY) || ''; },
@@ -2296,12 +2408,7 @@ window.CompDashboard = {
     }
 
     function canSee(menuKey) {
-      const cfg = SiwargaAPI.parseMenuConfig(props.settings);
-      const item = cfg[menuKey];
-      if (!item) return true;
-      if (!item.enabled) return false;
-      if (props.user && props.user.role === 'superadmin') return true;
-      return Array.isArray(item.roles) && props.user && item.roles.indexOf(props.user.role) !== -1;
+      return SiwargaAPI.canAccessMenu(menuKey, props.user, props.settings);
     }
 
     const activeBankAccounts = computed(() =>
@@ -2336,7 +2443,7 @@ window.CompDashboard = {
     }
 
     function goActionCard() {
-      if (props.user && props.user.role === 'warga') {
+      if (SiwargaAPI.isWargaRole(props.user, props.settings)) {
         if (canSee('surat')) emit('navigate', 'surat');
         else if (canSee('finance_ipl')) emit('navigate', 'finance_ipl');
       } else {
@@ -2395,7 +2502,7 @@ window.CompWarga = {
         </div>
         <div class="row q-gutter-sm">
           <q-btn v-if="isAdmin" unelevated color="teal-8" icon="add_home" label="Tambah KK" @click="openKkDialog()" />
-          <q-btn v-if="isAdmin || user.role === 'warga'" outline color="teal-8" icon="person_add" label="Tambah Warga" @click="openWargaDialog()" />
+          <q-btn v-if="isAdmin || isWarga" outline color="teal-8" icon="person_add" label="Tambah Warga" @click="openWargaDialog()" />
         </div>
       </div>
 
@@ -2486,7 +2593,7 @@ window.CompWarga = {
               </template>
               <template #body-cell-actions="props">
                 <q-td :props="props" class="q-gutter-xs">
-                  <q-btn v-if="isAdmin || user.role === 'warga'" flat dense round icon="edit" color="indigo-7" @click="openWargaDialog(props.row)" />
+                  <q-btn v-if="isAdmin || isWarga" flat dense round icon="edit" color="indigo-7" @click="openWargaDialog(props.row)" />
                   <q-btn v-if="isAdmin" flat dense round icon="delete" color="negative" @click="confirmDeleteWarga(props.row)" />
                 </q-td>
               </template>
@@ -2581,7 +2688,7 @@ window.CompWarga = {
                     map-options
                     outlined dense
                     label="Kartu Keluarga / No. Rumah *"
-                    :disable="user.role === 'warga'"
+                    :disable="isWarga"
                     :rules="[v=>!!v||'Wajib']"
                   />
                 </div>
@@ -2611,7 +2718,8 @@ window.CompWarga = {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
 
-    const isAdmin = computed(() => props.user.role === 'admin' || props.user.role === 'superadmin');
+    const isAdmin = computed(() => SiwargaAPI.isAdminRole(props.user, props.settings));
+    const isWarga = computed(() => SiwargaAPI.isWargaRole(props.user, props.settings));
     const tab = ref('kk');
     const loading = ref(false);
     const saving = ref(false);
@@ -2729,7 +2837,7 @@ window.CompWarga = {
 
     function openWargaDialog(row) {
       Object.assign(wargaForm, row ? Object.assign({}, row) : {
-        id: '', kk_id: props.user.role === 'warga' ? props.user.kk_id : (keluargaList.value[0]?.id || ''),
+        id: '', kk_id: isWarga.value ? props.user.kk_id : (keluargaList.value[0]?.id || ''),
         nik: '', nama_lengkap: '', jenis_kelamin: 'L', tempat_lahir: '', tanggal_lahir: '',
         hubungan_keluarga: 'Anggota', agama: 'Islam', pekerjaan: '', status_perkawinan: 'Belum Kawin',
         no_hp: '', status_warga: 'Aktif'
@@ -2766,7 +2874,7 @@ window.CompWarga = {
     onMounted(loadData);
 
     return {
-      isAdmin, tab, loading, saving, keluargaList, wargaList,
+      isAdmin, isWarga, tab, loading, saving, keluargaList, wargaList,
       searchKk, filterHunian, searchWarga, filterStatusWarga,
       kkColumns, wargaColumns, filteredKk, filteredWarga, kkSelectOptions,
       detailDialog, selectedKk, selectedKkMembers, kkDialog, kkForm, wargaDialog, wargaForm,
@@ -2946,7 +3054,7 @@ window.CompSurat = {
   setup(props) {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
-    const isAdmin = computed(() => props.user.role === 'admin' || props.user.role === 'superadmin');
+    const isAdmin = computed(() => SiwargaAPI.isAdminRole(props.user, props.settings));
     const loading = ref(false);
     const saving = ref(false);
     const suratList = ref([]);
@@ -3148,7 +3256,7 @@ window.CompInfo = {
               <div class="text-caption text-grey-6">Oleh: {{ item.penulis }}</div>
               <div v-if="canManage" class="q-gutter-xs">
                 <q-btn flat dense size="sm" icon="edit" color="indigo-7" label="Edit" @click="openForm(item)" />
-                <q-btn v-if="user.role === 'admin' || user.role === 'superadmin'" flat dense size="sm" icon="delete" color="negative" @click="deleteItem(item)" />
+                <q-btn v-if="isAdmin" flat dense size="sm" icon="delete" color="negative" @click="deleteItem(item)" />
               </div>
             </q-card-actions>
           </q-card>
@@ -3194,7 +3302,8 @@ window.CompInfo = {
   setup(props) {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
-    const canManage = computed(() => props.user.role === 'superadmin' || props.user.role === 'admin' || props.user.role === 'bendahara');
+    const isAdmin = computed(() => SiwargaAPI.isAdminRole(props.user));
+    const canManage = computed(() => SiwargaAPI.isFinanceStaff(props.user));
     const loading = ref(false);
     const saving = ref(false);
     const list = ref([]);
@@ -3271,7 +3380,7 @@ window.CompInfo = {
     onMounted(loadData);
 
     return {
-      canManage, loading, saving, search, filterKategori, filteredList,
+      isAdmin, canManage, loading, saving, search, filterKategori, filteredList,
       dialog, form, uploadFile, priorityColor, openForm, submitForm, deleteItem,
       formatDateID: SiwargaAPI.formatDateID
     };
@@ -3473,8 +3582,8 @@ window.CompKegiatan = {
   setup(props) {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
-    const isAdmin = computed(() => props.user.role === 'admin' || props.user.role === 'superadmin');
-    const canRespond = computed(() => props.user.role === 'superadmin' || props.user.role === 'admin' || props.user.role === 'bendahara');
+    const isAdmin = computed(() => SiwargaAPI.isAdminRole(props.user));
+    const canRespond = computed(() => SiwargaAPI.isFinanceStaff(props.user));
     const tab = ref('kegiatan');
     const saving = ref(false);
     const kegiatanList = ref([]);
@@ -4405,12 +4514,12 @@ window.CompFinanceIpl = {
   setup(props, { emit }) {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
-    const canManage = computed(() => props.user.role === 'superadmin' || props.user.role === 'admin' || props.user.role === 'bendahara');
+    const canManage = computed(() => SiwargaAPI.isFinanceStaff(props.user, props.settings));
     const loading = ref(false);
     const saving = ref(false);
     const rows = ref([]);
     // Untuk warga tampilkan semua periode agar tunggakan/tagihan bulan apa pun langsung terlihat
-    const filterPeriode = ref(props.user.role === 'warga' ? '' : SiwargaAPI.currentPeriode());
+    const filterPeriode = ref(SiwargaAPI.isWargaRole(props.user, props.settings) ? '' : SiwargaAPI.currentPeriode());
     const filterStatus = ref('Semua');
     const search = ref('');
     const mobileLimit = ref(20);
@@ -5171,7 +5280,8 @@ window.CompFinanceVerif = {
       const allowed = (cfg._permissions && Array.isArray(cfg._permissions.verif_revisi_roles))
         ? cfg._permissions.verif_revisi_roles
         : ['superadmin', 'admin', 'bendahara'];
-      return allowed.indexOf(props.user.role) !== -1;
+      const eff = SiwargaAPI.getEffectiveRole(props.user, props.settings || {});
+      return allowed.indexOf(props.user.role) !== -1 || allowed.indexOf(eff) !== -1;
     });
 
     const pendingList = computed(() => allRows.value.filter(r => r.status === 'Menunggu Verifikasi'));
@@ -5588,7 +5698,7 @@ window.CompFinanceKas = {
   setup(props) {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
-    const canManage = computed(() => props.user.role === 'superadmin' || props.user.role === 'admin' || props.user.role === 'bendahara');
+    const canManage = computed(() => SiwargaAPI.isFinanceStaff(props.user));
     const loading = ref(false);
     const saving = ref(false);
     const list = ref([]);
@@ -6389,6 +6499,21 @@ window.CompSettings = {
                           <q-checkbox dense size="sm" v-model="menuState[m.key].roles" val="bendahara" label="Bendahara" color="indigo-8" />
                           <q-checkbox v-if="m.key !== 'finance_verif'" dense size="sm" v-model="menuState[m.key].roles" val="warga" label="Warga" color="blue-grey-8" />
                         </div>
+                        <div class="row items-center q-gutter-xs q-mt-xs" v-if="menuState[m.key].enabled && customRoles.length">
+                          <span class="text-caption text-grey-6">Peran kustom:</span>
+                          <q-chip
+                            v-for="cr in customRoles"
+                            :key="m.key + '_' + cr.code"
+                            clickable dense size="sm"
+                            :outline="!isCustomRoleAllowed(m.key, cr)"
+                            :color="isCustomRoleAllowed(m.key, cr) ? cr.color : 'grey-5'"
+                            :text-color="isCustomRoleAllowed(m.key, cr) ? 'white' : 'grey-7'"
+                            :icon="isCustomRoleAllowed(m.key, cr) ? 'check' : 'close'"
+                            @click="toggleCustomRoleMenu(m.key, cr)"
+                          >
+                            {{ cr.label }}
+                          </q-chip>
+                        </div>
                       </div>
                     </div>
                   </q-item-section>
@@ -6611,6 +6736,7 @@ window.CompSettings = {
                 Pola password awal warga: <code>Gka#&lt;NoRumah&gt;@26</code> (contoh <code>A109</code> → <code>Gka#A109@26</code>)
               </div>
               <div class="row q-gutter-sm">
+                <q-btn v-if="isSuperadmin" outline color="indigo-8" icon="badge" :label="'Kelola Peran (' + customRoles.length + ')'" @click="openRoleManager" />
                 <q-btn outline color="amber-9" icon="enhanced_encryption" label="Upgrade Password Default Warga" :loading="upgradingPwds" @click="confirmUpgradeWargaPasswords" />
                 <q-btn unelevated color="teal-8" icon="person_add" label="Tambah Akun" @click="openUserDialog()" />
               </div>
@@ -6663,7 +6789,15 @@ window.CompSettings = {
                 </q-input>
               </div>
               <div class="col-6 col-sm-3">
-                <q-select v-model="filterUserRole" :options="['Semua', 'warga', 'bendahara', 'admin', 'superadmin']" outlined dense label="Filter Role" />
+                <q-select
+                  v-model="filterUserRole"
+                  :options="filterRoleOptions"
+                  option-value="value"
+                  option-label="label"
+                  emit-value map-options
+                  outlined dense
+                  label="Filter Role"
+                />
               </div>
               <div class="col-6 col-sm-3">
                 <q-select v-model="filterUserLogin" :options="['Semua', 'Hari Ini', 'Sudah Login', 'Belum Pernah Login']" outlined dense label="Status Login" />
@@ -6687,8 +6821,8 @@ window.CompSettings = {
                       <q-badge color="teal-8" class="text-weight-bold">{{ u.no_rumah || u.username }}</q-badge>
                       <span class="text-weight-bold text-grey-9">{{ u.nama }}</span>
                     </div>
-                    <q-badge :color="u.role === 'superadmin' ? 'deep-purple-8' : (u.role === 'admin' ? 'teal-9' : (u.role === 'bendahara' ? 'indigo-8' : 'blue-grey-7'))">
-                      {{ u.role }}
+                    <q-badge :color="getRoleBadgeColor(u.role)">
+                      {{ getRoleBadgeLabel(u.role) }}
                     </q-badge>
                   </div>
                   <div class="text-caption text-grey-6 q-mt-xs">
@@ -6724,8 +6858,8 @@ window.CompSettings = {
             <q-table v-else flat bordered :rows="filteredUsers" :columns="userColumns" row-key="id" :loading="loadingUsers" v-model:pagination="userPagination">
               <template #body-cell-role="props">
                 <q-td :props="props">
-                  <q-badge :color="props.row.role === 'superadmin' ? 'deep-purple-8' : (props.row.role === 'admin' ? 'teal-9' : (props.row.role === 'bendahara' ? 'indigo-8' : 'blue-grey-7'))">
-                    {{ props.row.role }}
+                  <q-badge :color="getRoleBadgeColor(props.row.role)">
+                    {{ getRoleBadgeLabel(props.row.role) }}
                   </q-badge>
                 </q-td>
               </template>
@@ -6790,8 +6924,24 @@ window.CompSettings = {
               <q-input v-model="userForm.username" outlined dense label="Username / No. Rumah *" :rules="[v=>!!v||'Wajib']" />
               <q-input v-model="userForm.nama" outlined dense label="Nama Tampilan *" :rules="[v=>!!v||'Wajib']" />
               <div class="row q-col-gutter-sm">
-                <div class="col-6"><q-select v-model="userForm.role" :options="roleOptions" outlined dense label="Peran (Role)" /></div>
-                <div class="col-6"><q-select v-model="userForm.status" :options="['Aktif', 'Nonaktif']" outlined dense label="Status" /></div>
+                <div class="col-12 col-sm-7">
+                  <q-select
+                    v-model="userForm.role"
+                    :options="roleOptions"
+                    option-value="value"
+                    option-label="label"
+                    emit-value map-options
+                    outlined dense
+                    label="Peran (Role)"
+                  >
+                    <template #after v-if="isSuperadmin">
+                      <q-btn flat dense round color="indigo-8" icon="add_circle" @click="openRoleManager">
+                        <q-tooltip>Tambah / Kelola Peran Kustom</q-tooltip>
+                      </q-btn>
+                    </template>
+                  </q-select>
+                </div>
+                <div class="col-12 col-sm-5"><q-select v-model="userForm.status" :options="['Aktif', 'Nonaktif']" outlined dense label="Status" /></div>
               </div>
               <q-select
                 v-model="userForm.kk_id"
@@ -6803,7 +6953,7 @@ window.CompSettings = {
                 @update:model-value="onSelectKk"
               />
               <q-input v-model="userForm.password" type="password" outlined dense :label="userForm.id ? 'Password Baru (Kosongkan jika tidak diubah)' : 'Password *'">
-                <template #after v-if="userForm.role === 'warga'">
+                <template #after v-if="isWargaBaseRole(userForm.role)">
                   <q-btn flat dense no-caps size="sm" color="teal-8" icon="auto_fix_high" label="Pola GKA" @click="fillDefaultWargaPwd">
                     <q-tooltip>Isi otomatis pola Gka#&lt;NoRumah&gt;@26</q-tooltip>
                   </q-btn>
@@ -6817,13 +6967,312 @@ window.CompSettings = {
           </q-card-section>
         </q-card>
       </q-dialog>
+
+      <!-- Dialog Kelola Peran (Custom Roles) khusus Superadmin -->
+      <q-dialog v-model="roleManagerDialog" persistent>
+        <q-card style="width: 640px; max-width: 96vw;">
+          <q-card-section class="bg-indigo-8 text-white row items-center justify-between">
+            <div>
+              <div class="text-subtitle1 text-weight-bold">Kelola Daftar Peran (Role)</div>
+              <div class="text-caption text-indigo-2">Tambah, ubah, atau hapus peran pengurus &amp; warga agar fleksibel sesuai struktur RT</div>
+            </div>
+            <q-btn flat round dense icon="close" v-close-popup />
+          </q-card-section>
+
+          <q-card-section class="scroll" style="max-height: 74vh;">
+            <!-- Form Tambah / Edit Peran -->
+            <div class="q-pa-md rounded-borders bg-grey-1 q-mb-md" style="border: 1px solid #cbd5e1;">
+              <div class="text-subtitle2 text-weight-bold text-indigo-9 q-mb-sm">
+                {{ editingRoleCode ? 'Edit Peran: ' + roleDraft.label : 'Tambah Peran Baru' }}
+              </div>
+              <div class="row q-col-gutter-sm">
+                <div class="col-12 col-sm-6">
+                  <q-input
+                    v-model="roleDraft.label"
+                    outlined dense bg-color="white"
+                    label="Nama Peran *"
+                    placeholder="Contoh: Koordinator Blok A, Seksi Keamanan"
+                  />
+                </div>
+                <div class="col-12 col-sm-6">
+                  <q-select
+                    v-model="roleDraft.base_role"
+                    :options="baseRoleOptions"
+                    option-value="value"
+                    option-label="label"
+                    emit-value map-options
+                    outlined dense bg-color="white"
+                    label="Tingkat Hak Akses Dasar"
+                  />
+                </div>
+                <div class="col-12 col-sm-6">
+                  <q-select
+                    v-model="roleDraft.color"
+                    :options="roleColorOptions"
+                    option-value="value"
+                    option-label="label"
+                    emit-value map-options
+                    outlined dense bg-color="white"
+                    label="Warna Badge"
+                  >
+                    <template #append>
+                      <q-badge :color="roleDraft.color || 'teal-8'" style="min-width: 18px; height: 18px;" />
+                    </template>
+                  </q-select>
+                </div>
+                <div class="col-12 col-sm-6 row items-center justify-end q-gutter-xs">
+                  <q-btn v-if="editingRoleCode" flat dense color="grey-7" label="Batal Edit" @click="resetRoleDraft" />
+                  <q-btn unelevated color="indigo-8" :icon="editingRoleCode ? 'check' : 'add'" :label="editingRoleCode ? 'Terapkan Perubahan' : 'Tambahkan ke Daftar'" @click="addOrUpdateRoleDraft" />
+                </div>
+              </div>
+              <div class="text-caption text-grey-6 q-mt-xs">
+                Pratinjau badge: <q-badge :color="roleDraft.color || 'teal-8'">{{ roleDraft.label || 'Nama Peran' }}</q-badge>
+              </div>
+            </div>
+
+            <!-- Daftar Peran Kustom -->
+            <div class="row items-center justify-between q-mb-xs">
+              <div class="text-subtitle2 text-weight-bold text-grey-9">Peran Kustom ({{ customRoles.length }})</div>
+              <q-btn flat dense no-caps size="sm" color="grey-7" icon="restart_alt" label="Muat Default Pengurus RT" @click="restoreDefaultCustomRoles" />
+            </div>
+            <q-list bordered separator class="rounded-borders bg-white q-mb-md">
+              <q-item v-if="!customRoles.length">
+                <q-item-section class="text-caption text-grey-6 text-center">Belum ada peran kustom. Tambahkan di formulir atas.</q-item-section>
+              </q-item>
+              <q-item v-for="cr in customRoles" :key="cr.code" dense class="q-py-xs">
+                <q-item-section>
+                  <div class="row items-center q-gutter-xs">
+                    <q-badge :color="cr.color || 'teal-8'">{{ cr.label }}</q-badge>
+                    <q-badge outline color="grey-7">{{ baseRoleShortLabel(cr.base_role) }}</q-badge>
+                  </div>
+                  <div class="text-caption text-grey-6">Kode: <code>{{ cr.code }}</code></div>
+                </q-item-section>
+                <q-item-section side>
+                  <div class="row q-gutter-xs">
+                    <q-btn flat dense round size="sm" icon="edit" color="indigo-7" @click="startEditRole(cr)" />
+                    <q-btn flat dense round size="sm" icon="delete" color="negative" @click="removeCustomRole(cr)" />
+                  </div>
+                </q-item-section>
+              </q-item>
+            </q-list>
+
+            <!-- Daftar 4 Peran Inti -->
+            <div class="text-caption text-weight-bold text-grey-7 q-mb-xs">Peran Inti Sistem (Tidak dapat dihapus)</div>
+            <div class="row q-gutter-xs">
+              <q-badge color="blue-grey-7" class="q-pa-xs">Warga RT (warga)</q-badge>
+              <q-badge color="indigo-8" class="q-pa-xs">Bendahara (bendahara)</q-badge>
+              <q-badge color="teal-9" class="q-pa-xs">Admin RT (admin)</q-badge>
+              <q-badge color="deep-purple-8" class="q-pa-xs">Superadmin (superadmin)</q-badge>
+            </div>
+          </q-card-section>
+
+          <q-separator />
+          <q-card-actions align="right" class="q-pa-md">
+            <q-btn flat label="Tutup" v-close-popup />
+            <q-btn unelevated color="indigo-8" icon="save" label="Simpan Daftar Peran" :loading="savingRoles" @click="saveCustomRoles" />
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
     </div>
   `,
   setup(props, { emit }) {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
     const isSuperadmin = computed(() => props.user && props.user.role === 'superadmin');
-    const roleOptions = computed(() => isSuperadmin.value ? ['warga', 'bendahara', 'admin', 'superadmin'] : ['warga', 'bendahara', 'admin']);
+    const customRoles = ref(SiwargaAPI.parseCustomRoles(props.settings));
+    const roleManagerDialog = ref(false);
+    const savingRoles = ref(false);
+    const editingRoleCode = ref('');
+    const roleDraft = reactive({ label: '', base_role: 'warga', color: 'teal-8' });
+
+    const baseRoleOptions = [
+      { value: 'warga', label: 'Warga (Lihat & Bayar IPL Sendiri)' },
+      { value: 'bendahara', label: 'Bendahara (Kelola IPL, Verifikasi & Kas)' },
+      { value: 'admin', label: 'Admin RT (Pengurus Inti / Kelola Data)' }
+    ];
+    const roleColorOptions = [
+      { value: 'teal-8', label: 'Hijau Teal' },
+      { value: 'cyan-9', label: 'Biru Cyan' },
+      { value: 'light-blue-9', label: 'Biru Langit' },
+      { value: 'indigo-8', label: 'Biru Indigo' },
+      { value: 'purple-8', label: 'Ungu' },
+      { value: 'green-8', label: 'Hijau Daun' },
+      { value: 'amber-9', label: 'Kuning / Oranye' },
+      { value: 'deep-orange-8', label: 'Oranye Tua' },
+      { value: 'pink-8', label: 'Merah Muda' },
+      { value: 'blue-grey-8', label: 'Abu-abu Gelap' }
+    ];
+
+    const allRoleItems = computed(() => {
+      const cores = SiwargaAPI.CORE_ROLES.filter(r => isSuperadmin.value || r.code !== 'superadmin');
+      return cores.concat(customRoles.value);
+    });
+
+    const roleOptions = computed(() =>
+      allRoleItems.value.map(r => ({ value: r.code, label: r.label }))
+    );
+
+    const filterRoleOptions = computed(() =>
+      [{ value: 'Semua', label: 'Semua Peran' }].concat(
+        SiwargaAPI.CORE_ROLES.concat(customRoles.value).map(r => ({ value: r.code, label: r.label }))
+      )
+    );
+
+    function getRoleMetaLocal(code) {
+      const c = String(code || 'warga').trim().toLowerCase();
+      const all = SiwargaAPI.CORE_ROLES.concat(customRoles.value);
+      const found = all.find(r => r.code === c);
+      return found || { code: c, label: code || 'Warga RT', base_role: 'warga', color: 'blue-grey-7' };
+    }
+
+    function getRoleBadgeColor(code) {
+      return getRoleMetaLocal(code).color || 'blue-grey-7';
+    }
+
+    function getRoleBadgeLabel(code) {
+      return getRoleMetaLocal(code).label || code;
+    }
+
+    function isWargaBaseRole(code) {
+      return getRoleMetaLocal(code).base_role === 'warga';
+    }
+
+    function baseRoleShortLabel(base) {
+      if (base === 'admin') return 'Akses: Admin RT';
+      if (base === 'bendahara') return 'Akses: Bendahara';
+      return 'Akses: Warga';
+    }
+
+    function isCustomRoleAllowed(menuKey, cr) {
+      const item = menuState[menuKey];
+      if (!item) return false;
+      const roles = Array.isArray(item.roles) ? item.roles : [];
+      const denied = Array.isArray(item.denied_roles) ? item.denied_roles : [];
+      if (roles.indexOf(cr.code) !== -1) return true;
+      if (denied.indexOf(cr.code) !== -1) return false;
+      return roles.indexOf(cr.base_role || 'warga') !== -1;
+    }
+
+    function toggleCustomRoleMenu(menuKey, cr) {
+      const item = menuState[menuKey];
+      if (!item) return;
+      if (!Array.isArray(item.roles)) item.roles = [];
+      if (!Array.isArray(item.denied_roles)) item.denied_roles = [];
+      const currentlyOn = isCustomRoleAllowed(menuKey, cr);
+      item.roles = item.roles.filter(r => r !== cr.code);
+      item.denied_roles = item.denied_roles.filter(r => r !== cr.code);
+      if (currentlyOn) {
+        item.denied_roles.push(cr.code);
+      } else {
+        item.roles.push(cr.code);
+      }
+    }
+
+    function openRoleManager() {
+      resetRoleDraft();
+      roleManagerDialog.value = true;
+    }
+
+    function resetRoleDraft() {
+      editingRoleCode.value = '';
+      roleDraft.label = '';
+      roleDraft.base_role = 'warga';
+      roleDraft.color = 'teal-8';
+    }
+
+    function startEditRole(cr) {
+      editingRoleCode.value = cr.code;
+      roleDraft.label = cr.label;
+      roleDraft.base_role = cr.base_role || 'warga';
+      roleDraft.color = cr.color || 'teal-8';
+    }
+
+    function addOrUpdateRoleDraft() {
+      const label = String(roleDraft.label || '').trim();
+      if (!label) {
+        $q.notify({ type: 'warning', message: 'Nama peran wajib diisi.' });
+        return;
+      }
+      if (editingRoleCode.value) {
+        const idx = customRoles.value.findIndex(r => r.code === editingRoleCode.value);
+        if (idx >= 0) {
+          customRoles.value[idx] = {
+            code: editingRoleCode.value,
+            label: label,
+            base_role: roleDraft.base_role || 'warga',
+            color: roleDraft.color || 'teal-8',
+            core: false
+          };
+        }
+        resetRoleDraft();
+        return;
+      }
+      const code = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+      if (!code || ['superadmin', 'admin', 'bendahara', 'warga'].indexOf(code) !== -1) {
+        $q.notify({ type: 'warning', message: 'Nama peran tersebut sudah termasuk peran inti sistem.' });
+        return;
+      }
+      if (customRoles.value.some(r => r.code === code)) {
+        $q.notify({ type: 'warning', message: 'Peran dengan kode "' + code + '" sudah ada di daftar.' });
+        return;
+      }
+      customRoles.value.push({
+        code: code,
+        label: label,
+        base_role: roleDraft.base_role || 'warga',
+        color: roleDraft.color || 'teal-8',
+        core: false
+      });
+      resetRoleDraft();
+    }
+
+    function removeCustomRole(cr) {
+      const usedCount = users.value.filter(u => u.role === cr.code).length;
+      if (usedCount > 0) {
+        $q.dialog({
+          title: 'Hapus Peran "' + cr.label + '"?',
+          message: 'Saat ini ada ' + usedCount + ' akun yang menggunakan peran ini. Jika dihapus, akun tersebut akan otomatis memakai hak akses standar (Warga) hingga peran akunnya diubah. Lanjutkan?',
+          cancel: { label: 'Batal', flat: true },
+          ok: { label: 'Ya, Hapus', color: 'negative', unelevated: true }
+        }).onOk(() => {
+          customRoles.value = customRoles.value.filter(r => r.code !== cr.code);
+        });
+      } else {
+        customRoles.value = customRoles.value.filter(r => r.code !== cr.code);
+      }
+    }
+
+    function restoreDefaultCustomRoles() {
+      const existing = {};
+      customRoles.value.forEach(r => { existing[r.code] = true; });
+      SiwargaAPI.DEFAULT_CUSTOM_ROLES.forEach(r => {
+        if (!existing[r.code]) customRoles.value.push(Object.assign({ core: false }, r));
+      });
+      $q.notify({ type: 'info', message: 'Daftar peran pengurus default RT dimuat. Klik Simpan Daftar Peran untuk menyimpan.' });
+    }
+
+    async function saveCustomRoles() {
+      savingRoles.value = true;
+      try {
+        const updated = await SiwargaAPI.call('saveCustomRoles', {
+          roles: customRoles.value.map(r => ({
+            code: r.code,
+            label: r.label,
+            base_role: r.base_role || 'warga',
+            color: r.color || 'teal-8'
+          }))
+        });
+        Object.assign(form, updated || {});
+        customRoles.value = SiwargaAPI.parseCustomRoles(updated || form);
+        emit('settings-updated', updated);
+        $q.notify({ type: 'positive', message: 'Daftar peran berhasil disimpan!' });
+        roleManagerDialog.value = false;
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message });
+      } finally {
+        savingRoles.value = false;
+      }
+    }
     const tab = ref(isSuperadmin.value ? 'menus' : 'profile');
     const saving = ref(false);
     const savingMenus = ref(false);
@@ -6963,7 +7412,7 @@ window.CompSettings = {
           if (filterUserLogin.value === 'Sudah Login' && !u.last_login_at) return false;
           if (filterUserLogin.value === 'Belum Pernah Login' && !!u.last_login_at) return false;
           if (!q) return true;
-          return [u.username, u.nama, u.no_rumah, u.role].some(v => String(v || '').toLowerCase().includes(q));
+          return [u.username, u.nama, u.no_rumah, u.role, getRoleBadgeLabel(u.role)].some(v => String(v || '').toLowerCase().includes(q));
         })
         .sort((a, b) => {
           const ta = String(a.last_login_at || '').trim().substring(0, 19);
@@ -7066,7 +7515,8 @@ window.CompSettings = {
           payload[k] = {
             enabled: Boolean(menuState[k].enabled),
             label: String(menuState[k].label || '').trim(),
-            roles: Array.isArray(menuState[k].roles) ? menuState[k].roles.slice() : []
+            roles: Array.isArray(menuState[k].roles) ? menuState[k].roles.slice() : [],
+            denied_roles: Array.isArray(menuState[k].denied_roles) ? menuState[k].denied_roles.slice() : []
           };
         });
         const updated = await SiwargaAPI.call('saveMenuConfig', { menu_config: payload });
@@ -7097,6 +7547,7 @@ window.CompSettings = {
           bankAccounts.value = parsedBanks.length ? parsedBanks : [{ bank: '', norek: '', atas_nama: '', aktif: true }];
           const parsedMenus = SiwargaAPI.parseMenuConfig(adminCfg);
           Object.keys(parsedMenus).forEach(k => { menuState[k] = parsedMenus[k]; });
+          customRoles.value = SiwargaAPI.parseCustomRoles(adminCfg);
         }
       } catch (err) {
         $q.notify({ type: 'negative', message: err.message });
@@ -7242,7 +7693,12 @@ window.CompSettings = {
     onMounted(loadUsers);
 
     return {
-      isSuperadmin, roleOptions, tab, saving, savingMenus, form, bankAccounts, menuState, menuGroups,
+      isSuperadmin, roleOptions, filterRoleOptions, customRoles, roleManagerDialog, savingRoles,
+      editingRoleCode, roleDraft, baseRoleOptions, roleColorOptions,
+      getRoleBadgeColor, getRoleBadgeLabel, isWargaBaseRole, baseRoleShortLabel,
+      isCustomRoleAllowed, toggleCustomRoleMenu, openRoleManager, resetRoleDraft,
+      startEditRole, addOrUpdateRoleDraft, removeCustomRole, restoreDefaultCustomRoles, saveCustomRoles,
+      tab, saving, savingMenus, form, bankAccounts, menuState, menuGroups,
       logoFile, logoPreview, showWaToken, testWaPhone, testingWa, upgradingPwds, impersonatingId,
       searchUser, filterUserRole, filterUserLogin, loadingUsers, userLoginStats, filteredUsers,
       waProviderOptions, waVars, waAutoReminderBool,
@@ -7259,7 +7715,7 @@ window.CompSettings = {
 
   <script>
 window.CompProfile = {
-  props: ['user', 'initialTab'],
+  props: ['user', 'settings', 'initialTab'],
   emits: ['user-updated', 'password-changed'],
   template: `
     <div>
@@ -7283,7 +7739,7 @@ window.CompProfile = {
             <div class="text-caption text-grey-7">
               Username: <strong>{{ profileUser.username || user.username }}</strong>
               · Rumah: <strong>{{ profileUser.no_rumah || '-' }}</strong>
-              <q-badge color="teal-8" class="q-ml-xs text-uppercase">{{ profileUser.role || user.role }}</q-badge>
+              <q-badge :color="roleMeta.color" class="q-ml-xs">{{ roleMeta.label }}</q-badge>
             </div>
           </div>
           <div class="col-12 col-sm-auto text-sm-right" v-if="keluarga">
@@ -7621,12 +8077,14 @@ window.CompProfile = {
       }
     }
 
+    const roleMeta = computed(() => SiwargaAPI.getRoleMeta(profileUser.value.role || (props.user && props.user.role) || 'warga', props.settings));
+
     onMounted(loadProfile);
 
     return {
       tab, loading, savingProfile, savingPwd, showCur, showNew, showConf,
       profileUser, keluarga, anggotaList, selectedWargaId, anggotaOptions,
-      accountForm, kkForm, wargaForm, pwdForm, initials,
+      accountForm, kkForm, wargaForm, pwdForm, initials, roleMeta,
       onSelectAnggota, startNewAnggota, submitProfile, submitPassword,
       formatRupiah: SiwargaAPI.formatRupiah
     };
@@ -8147,6 +8605,7 @@ window.CompProfile = {
             <comp-profile
               v-else-if="activePage === 'profile'"
               :user="currentUser"
+              :settings="settings"
               :initial-tab="profileInitialTab"
               @user-updated="onUserUpdated"
               @password-changed="onPasswordChanged"
@@ -8230,6 +8689,7 @@ window.CompProfile = {
           bank_atas_nama: '',
           bank_accounts_json: '',
           menu_config_json: '',
+          custom_roles_json: '',
           kontak_darurat: '',
           qris_info: ''
         });
@@ -8237,22 +8697,17 @@ window.CompProfile = {
         const isSuperadmin = computed(() => currentUser.value && currentUser.value.role === 'superadmin');
 
         const canManageFinance = computed(() =>
-          currentUser.value && (currentUser.value.role === 'superadmin' || currentUser.value.role === 'admin' || currentUser.value.role === 'bendahara')
+          SiwargaAPI.isFinanceStaff(currentUser.value, settings)
         );
 
         const canAccessSettings = computed(() =>
-          currentUser.value && (currentUser.value.role === 'superadmin' || currentUser.value.role === 'admin')
+          SiwargaAPI.isAdminRole(currentUser.value, settings)
         );
 
         const menuConfig = computed(() => SiwargaAPI.parseMenuConfig(settings));
 
         function isMenuVisible(menuKey) {
-          const item = menuConfig.value[menuKey];
-          if (!item) return true;
-          if (!item.enabled) return false;
-          if (!currentUser.value) return false;
-          if (currentUser.value.role === 'superadmin') return true;
-          return Array.isArray(item.roles) && item.roles.indexOf(currentUser.value.role) !== -1;
+          return SiwargaAPI.canAccessMenu(menuKey, currentUser.value, settings);
         }
 
         const hasAnyPortalMenu = computed(() =>
@@ -8319,10 +8774,8 @@ window.CompProfile = {
         });
 
         function roleLabel(role) {
-          if (role === 'superadmin') return 'Superadmin';
           if (role === 'admin') return 'Ketua / Admin RT';
-          if (role === 'bendahara') return 'Bendahara RT';
-          return 'Warga RT';
+          return SiwargaAPI.getRoleMeta(role, settings).label;
         }
 
         function navigate(page) {
