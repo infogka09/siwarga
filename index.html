@@ -6721,7 +6721,7 @@ window.CompSettings = {
             </div>
 
             <!-- Tampilan Desktop Table -->
-            <q-table v-else flat bordered :rows="filteredUsers" :columns="userColumns" row-key="id" :loading="loadingUsers" :pagination="{ rowsPerPage: 15 }">
+            <q-table v-else flat bordered :rows="filteredUsers" :columns="userColumns" row-key="id" :loading="loadingUsers" v-model:pagination="userPagination">
               <template #body-cell-role="props">
                 <q-td :props="props">
                   <q-badge :color="props.row.role === 'superadmin' ? 'deep-purple-8' : (props.row.role === 'admin' ? 'teal-9' : (props.row.role === 'bendahara' ? 'indigo-8' : 'blue-grey-7'))">
@@ -6885,13 +6885,33 @@ window.CompSettings = {
     const userDialog = ref(false);
     const userForm = reactive({ id: '', username: '', nama: '', role: 'warga', kk_id: '', no_rumah: '', password: '', status: 'Aktif' });
 
+    const userPagination = ref({
+      sortBy: 'last_login_at',
+      descending: true,
+      rowsPerPage: 15
+    });
+
     const userColumns = [
       { name: 'username', label: 'Username', field: 'username', align: 'left', sortable: true },
       { name: 'nama', label: 'Nama', field: 'nama', align: 'left', sortable: true },
       { name: 'role', label: 'Role', field: 'role', align: 'center', sortable: true },
       { name: 'no_rumah', label: 'Rumah', field: 'no_rumah', align: 'center', sortable: true },
       { name: 'status', label: 'Status', field: 'status', align: 'center', sortable: true },
-      { name: 'last_login_at', label: 'Login Terakhir', field: 'last_login_at', align: 'left', sortable: true },
+      {
+        name: 'last_login_at',
+        label: 'Login Terakhir',
+        field: 'last_login_at',
+        align: 'left',
+        sortable: true,
+        sort: (a, b) => {
+          const ta = String(a || '').trim().substring(0, 19);
+          const tb = String(b || '').trim().substring(0, 19);
+          if (ta === tb) return 0;
+          if (!ta) return -1;
+          if (!tb) return 1;
+          return ta < tb ? -1 : 1;
+        }
+      },
       { name: 'actions', label: 'Aksi', field: 'id', align: 'right' }
     ];
 
@@ -6936,14 +6956,23 @@ window.CompSettings = {
 
     const filteredUsers = computed(() => {
       const q = (searchUser.value || '').toLowerCase();
-      return users.value.filter(u => {
-        if (filterUserRole.value !== 'Semua' && u.role !== filterUserRole.value) return false;
-        if (filterUserLogin.value === 'Hari Ini' && !isLoginToday(u.last_login_at)) return false;
-        if (filterUserLogin.value === 'Sudah Login' && !u.last_login_at) return false;
-        if (filterUserLogin.value === 'Belum Pernah Login' && !!u.last_login_at) return false;
-        if (!q) return true;
-        return [u.username, u.nama, u.no_rumah, u.role].some(v => String(v || '').toLowerCase().includes(q));
-      });
+      return users.value
+        .filter(u => {
+          if (filterUserRole.value !== 'Semua' && u.role !== filterUserRole.value) return false;
+          if (filterUserLogin.value === 'Hari Ini' && !isLoginToday(u.last_login_at)) return false;
+          if (filterUserLogin.value === 'Sudah Login' && !u.last_login_at) return false;
+          if (filterUserLogin.value === 'Belum Pernah Login' && !!u.last_login_at) return false;
+          if (!q) return true;
+          return [u.username, u.nama, u.no_rumah, u.role].some(v => String(v || '').toLowerCase().includes(q));
+        })
+        .sort((a, b) => {
+          const ta = String(a.last_login_at || '').trim().substring(0, 19);
+          const tb = String(b.last_login_at || '').trim().substring(0, 19);
+          if (ta === tb) return 0;
+          if (!ta) return 1;
+          if (!tb) return -1;
+          return ta > tb ? -1 : 1;
+        });
     });
 
     function canLoginAs(row) {
@@ -7217,7 +7246,7 @@ window.CompSettings = {
       logoFile, logoPreview, showWaToken, testWaPhone, testingWa, upgradingPwds, impersonatingId,
       searchUser, filterUserRole, filterUserLogin, loadingUsers, userLoginStats, filteredUsers,
       waProviderOptions, waVars, waAutoReminderBool,
-      users, userColumns, kkOptions, userDialog, userForm,
+      users, userColumns, userPagination, kkOptions, userDialog, userForm,
       isLoginToday, formatLoginTime, formatDateTimeID: SiwargaAPI.formatDateTimeID, loadUsers,
       addBankAccount, removeBankAccount, resetMenuDefaults, saveMenuConfig,
       fillDefaultWargaPwd, confirmUpgradeWargaPasswords, canLoginAs, confirmLoginAs,
