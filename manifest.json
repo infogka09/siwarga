@@ -1,6 +1,6 @@
 {
-  "name": "SIWARGA GKA — Perumahan Griya Kedaung Asri",
-  "short_name": "SIWARGA GKA",
+  "name": "Sistem Informasi Warga GKA — Perumahan Griya Kedaung Asri",
+  "short_name": "Sistem Informasi Warga GKA",
   "description": "Layanan Iuran IPL Digital & Transparansi Kas Perumahan Griya Kedaung Asri",
   "start_url": "./",
   "display": "standalone",
