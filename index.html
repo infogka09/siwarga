@@ -1075,9 +1075,13 @@
         delete db.loginAttempts[uname];
         const pad2 = function (n) { return n < 10 ? '0' + n : String(n); };
         const dt = new Date();
-        const localNow = dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate()) +
+        const fallbackNow = dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate()) +
           'T' + pad2(dt.getHours()) + ':' + pad2(dt.getMinutes()) + ':' + pad2(dt.getSeconds());
-        found.last_login_at = localNow;
+        const rawClientTime = String(payload.client_login_at || '').trim();
+        const validClientTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(rawClientTime) ? rawClientTime : fallbackNow;
+        const rawTz = String(payload.client_tz || '').trim();
+        const safeTz = /^(WIB|WITA|WIT|UTC[+-]\d{1,2}(:\d{2})?)$/.test(rawTz) ? rawTz : 'WIB';
+        found.last_login_at = validClientTime + ' ' + safeTz;
         found.login_count = (Number(found.login_count) || 0) + 1;
         const weakList = ['gka123', 'warga123', 'admin123', 'bendahara123', 'superadmin123'];
         const cleanHome = String(found.no_rumah || found.username || 'WARGA').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -6699,7 +6703,7 @@ window.CompSettings = {
                         </q-badge>
                         <span v-if="u.login_count > 0" class="text-caption text-grey-6">({{ u.login_count }}x)</span>
                         <div class="text-caption text-grey-9 text-weight-medium q-mt-xs">
-                          <q-icon name="schedule" size="13px" color="teal-8" class="q-mr-xs" />{{ formatDateTimeID(u.last_login_at) }} WIB
+                          <q-icon name="schedule" size="13px" color="teal-8" class="q-mr-xs" />{{ formatLoginTime(u.last_login_at) }}
                         </div>
                       </template>
                       <template v-else>
@@ -6743,7 +6747,7 @@ window.CompSettings = {
                       <span v-if="props.row.login_count > 0" class="text-caption text-grey-6">({{ props.row.login_count }}x)</span>
                     </div>
                     <div class="text-caption text-grey-9 text-weight-medium q-mt-xs" style="white-space: nowrap;">
-                      <q-icon name="schedule" size="13px" color="teal-8" class="q-mr-xs" />{{ formatDateTimeID(props.row.last_login_at) }} WIB
+                      <q-icon name="schedule" size="13px" color="teal-8" class="q-mr-xs" />{{ formatLoginTime(props.row.last_login_at) }}
                     </div>
                   </template>
                   <template v-else>
@@ -6900,6 +6904,14 @@ window.CompSettings = {
     function isLoginToday(isoStr) {
       if (!isoStr) return false;
       return String(isoStr).trim().substring(0, 10) === getLocalTodayStr();
+    }
+
+    function formatLoginTime(val) {
+      if (!val) return '-';
+      const s = String(val).trim();
+      const tzMatch = s.match(/\s+(WIB|WITA|WIT|UTC[+-]\d{1,2}(?::\d{2})?)$/);
+      const tz = tzMatch ? tzMatch[1] : 'WIB';
+      return SiwargaAPI.formatDateTimeID(s) + ' ' + tz;
     }
 
     const kkOptions = computed(() => kkList.value.map(k => ({
@@ -7206,7 +7218,7 @@ window.CompSettings = {
       searchUser, filterUserRole, filterUserLogin, loadingUsers, userLoginStats, filteredUsers,
       waProviderOptions, waVars, waAutoReminderBool,
       users, userColumns, kkOptions, userDialog, userForm,
-      isLoginToday, formatDateTimeID: SiwargaAPI.formatDateTimeID, loadUsers,
+      isLoginToday, formatLoginTime, formatDateTimeID: SiwargaAPI.formatDateTimeID, loadUsers,
       addBankAccount, removeBankAccount, resetMenuDefaults, saveMenuConfig,
       fillDefaultWargaPwd, confirmUpgradeWargaPasswords, canLoginAs, confirmLoginAs,
       onPickLogo, resetLogo, onChangeWaProvider, appendWaVar, runTestWa,
@@ -8410,9 +8422,26 @@ window.CompProfile = {
         async function handleLogin() {
           loginLoading.value = true;
           try {
+            const d = new Date();
+            const pad2 = n => (n < 10 ? '0' + n : String(n));
+            const clientLoginAt = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+              'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+            const offsetMin = -d.getTimezoneOffset();
+            let clientTz = 'WIB';
+            if (offsetMin === 420) clientTz = 'WIB';
+            else if (offsetMin === 480) clientTz = 'WITA';
+            else if (offsetMin === 540) clientTz = 'WIT';
+            else {
+              const sign = offsetMin >= 0 ? '+' : '-';
+              const absH = Math.floor(Math.abs(offsetMin) / 60);
+              const absM = Math.abs(offsetMin) % 60;
+              clientTz = 'UTC' + sign + absH + (absM ? ':' + pad2(absM) : '');
+            }
             const res = await SiwargaAPI.call('login', {
               username: loginForm.username,
-              password: loginForm.password
+              password: loginForm.password,
+              client_login_at: clientLoginAt,
+              client_tz: clientTz
             });
             try {
               if (rememberUsername.value) localStorage.setItem('siwarga_saved_username', loginForm.username);
