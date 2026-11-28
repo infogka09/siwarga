@@ -8696,11 +8696,11 @@ window.CompSettings = {
             </div>
 
             <div class="q-mt-md q-pa-md bg-grey-1 rounded-borders text-caption text-grey-8" style="border: 1px solid #e2e8f0; line-height: 1.6;">
-              <div class="text-weight-bold text-teal-9 q-mb-xs">Panduan Setup Singkat OneSignal (Gratis, ±5 Menit):</div>
+              <div class="text-weight-bold text-teal-9 q-mb-xs">Panduan Setup Singkat OneSignal untuk GitHub Pages (Gratis, ±5 Menit):</div>
               <div>1. Daftar akun gratis di <strong>https://onesignal.com</strong> → klik <strong>New App/Website</strong> → pilih platform <strong>Web</strong>.</div>
-              <div>2. Pilih <strong>Typical Site</strong> → isi Site Name: <code>SIWARGA GKA</code>, Site URL: <code>https://infogka09.github.io/siwarga</code>, Default Icon URL: <code>https://infogka09.github.io/siwarga/icon-gka.png</code>.</div>
-              <div>3. Di bagian <em>Advanced Push Settings</em> (opsional), aktifkan <strong>Customize service worker</strong> dengan Path: <code>/siwarga/OneSignalSDKWorker.js</code> dan Registration Scope: <code>/siwarga/</code> (file <code>OneSignalSDKWorker.js</code> sudah otomatis disediakan di folder <code>public/</code>).</div>
-              <div>4. Buka menu <strong>Settings → Keys &amp; IDs</strong> di OneSignal → salin <strong>App ID</strong> dan <strong>App API Key (REST API Key)</strong> ke form di atas, nyalakan toggle, lalu klik <strong>Simpan Konfigurasi Push</strong>.</div>
+              <div>2. Pilih <strong>Custom code</strong> (disarankan untuk GitHub Pages subfolder) atau <strong>Typical site</strong> → isi Site Name: <code>SIWARGA GKA</code>, Site URL: <code>https://infogka09.github.io</code> <em>(OneSignal memang hanya menyimpan domain utama tanpa <code>/siwarga/</code> — ini normal)</em>.</div>
+              <div>3. Jika memakai <strong>Typical site</strong>, centang <strong>Service workers</strong> dan isi Path: <code>/siwarga/</code>, Main &amp; Updater filename: <code>OneSignalSDKWorker.js</code>, Registration scope: <code>/siwarga/</code> lalu klik <strong>Save</strong>. Pastikan <code>public/OneSignalSDKWorker.js</code> sudah di-upload ke repo GitHub.</div>
+              <div>4. Buka <strong>Settings → API keys and IDs</strong> di OneSignal → salin <strong>App ID</strong> dan <strong>App API Key (REST API Key)</strong> ke form di atas, nyalakan toggle, klik <strong>Simpan Konfigurasi Push</strong>, lalu aktifkan ikon lonceng notifikasi di HP sebelum klik <strong>Kirim Tes Push</strong>.</div>
             </div>
           </q-tab-panel>
 
@@ -11520,32 +11520,49 @@ window.CompProfile = {
           }
           try {
             await loadOneSignalSdk();
-            const basePath = (window.location.pathname || '/').replace(/\/[^/]*$/, '/') || '/';
+            const rawPath = window.location.pathname || '/';
+            let basePath = rawPath.endsWith('/')
+              ? rawPath
+              : (/\.[^/]+$/.test(rawPath) ? rawPath.replace(/\/[^/]*$/, '/') : (rawPath + '/'));
+            if (!basePath.startsWith('/')) basePath = '/' + basePath;
             const swPath = basePath.replace(/^\//, '') + 'OneSignalSDKWorker.js';
             window.OneSignalDeferred = window.OneSignalDeferred || [];
-            window.OneSignalDeferred.push(async function (OneSignal) {
-              try {
-                if (oneSignalInitializedAppId !== appId) {
-                  await OneSignal.init({
-                    appId: appId,
-                    serviceWorkerPath: swPath,
-                    serviceWorkerParam: { scope: basePath },
-                    notifyButton: { enable: false },
-                    allowLocalhostAsSecureOrigin: true
-                  });
-                  oneSignalInitializedAppId = appId;
+            await new Promise((resolve) => {
+              window.OneSignalDeferred.push(async function (OneSignal) {
+                try {
+                  if (oneSignalInitializedAppId !== appId) {
+                    try {
+                      await OneSignal.init({
+                        appId: appId,
+                        serviceWorkerPath: swPath,
+                        serviceWorkerParam: { scope: basePath },
+                        notifyButton: { enable: false },
+                        allowLocalhostAsSecureOrigin: true
+                      });
+                    } catch (initErr) {
+                      console.warn('OneSignal custom SW init fallback:', initErr);
+                      await OneSignal.init({
+                        appId: appId,
+                        notifyButton: { enable: false },
+                        allowLocalhostAsSecureOrigin: true
+                      });
+                    }
+                    oneSignalInitializedAppId = appId;
+                  }
+                  const opted = Boolean(OneSignal.User && OneSignal.User.PushSubscription && OneSignal.User.PushSubscription.optedIn);
+                  pushSubscribed.value = opted && Notification.permission === 'granted';
+                  if (OneSignal.User && OneSignal.User.PushSubscription && OneSignal.User.PushSubscription.addEventListener) {
+                    OneSignal.User.PushSubscription.addEventListener('change', function (ev) {
+                      pushSubscribed.value = Boolean(ev && ev.current && ev.current.optedIn) && Notification.permission === 'granted';
+                    });
+                  }
+                  if (currentUser.value) syncPushUserTags();
+                } catch (e) {
+                  console.warn('OneSignal init warning:', e);
+                } finally {
+                  resolve();
                 }
-                const opted = Boolean(OneSignal.User && OneSignal.User.PushSubscription && OneSignal.User.PushSubscription.optedIn);
-                pushSubscribed.value = opted && Notification.permission === 'granted';
-                if (OneSignal.User && OneSignal.User.PushSubscription && OneSignal.User.PushSubscription.addEventListener) {
-                  OneSignal.User.PushSubscription.addEventListener('change', function (ev) {
-                    pushSubscribed.value = Boolean(ev && ev.current && ev.current.optedIn) && Notification.permission === 'granted';
-                  });
-                }
-                if (currentUser.value) syncPushUserTags();
-              } catch (e) {
-                console.warn('OneSignal init warning:', e);
-              }
+              });
             });
           } catch (err) {
             console.warn('OneSignal load warning:', err);
