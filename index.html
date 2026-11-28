@@ -2250,6 +2250,11 @@
         if (payload && payload.sekretaris2_rt !== undefined) db.settings.sekretaris2_rt = String(payload.sekretaris2_rt || '').trim();
         if (payload && payload.bendahara_rt !== undefined) db.settings.bendahara_rt = String(payload.bendahara_rt || '').trim();
         if (payload && payload.bendahara2_rt !== undefined) db.settings.bendahara2_rt = String(payload.bendahara2_rt || '').trim();
+        if (payload && payload.ttd_styles_json !== undefined) {
+          db.settings.ttd_styles_json = typeof payload.ttd_styles_json === 'string'
+            ? payload.ttd_styles_json
+            : JSON.stringify(payload.ttd_styles_json || {});
+        }
         saveMockDb(db);
         return Object.assign({}, db.settings);
       }
@@ -7256,28 +7261,18 @@ window.CompFinanceReport = {
             <div class="col-6 report-sig-half">
               <div class="text-caption text-grey-7">Diperiksa oleh,</div>
               <div class="text-body2 text-weight-bold">Sekretaris {{ settings.nama_rt }}</div>
-              <div class="row items-center justify-center no-wrap q-gutter-sm q-my-xs" style="height: 84px;">
+              <div class="row items-center justify-center no-wrap q-gutter-sm q-my-xs" style="min-height: 84px;">
                 <img
                   v-if="settings.ttd_sekretaris_rt_url"
                   :src="settings.ttd_sekretaris_rt_url"
                   alt="TTD Sekretaris 1 RT"
-                  :style="{
-                    maxHeight: '74px',
-                    maxWidth: (settings.ttd_sekretaris_rt_url && settings.ttd_sekretaris2_rt_url) ? '125px' : '170px',
-                    objectFit: 'contain',
-                    mixBlendMode: 'multiply'
-                  }"
+                  :style="sigReportImgStyle('sekretaris', Boolean(settings.ttd_sekretaris_rt_url && settings.ttd_sekretaris2_rt_url))"
                 />
                 <img
                   v-if="settings.ttd_sekretaris2_rt_url"
                   :src="settings.ttd_sekretaris2_rt_url"
                   alt="TTD Sekretaris 2 RT"
-                  :style="{
-                    maxHeight: '74px',
-                    maxWidth: (settings.ttd_sekretaris_rt_url && settings.ttd_sekretaris2_rt_url) ? '125px' : '170px',
-                    objectFit: 'contain',
-                    mixBlendMode: 'multiply'
-                  }"
+                  :style="sigReportImgStyle('sekretaris2', Boolean(settings.ttd_sekretaris_rt_url && settings.ttd_sekretaris2_rt_url))"
                 />
               </div>
               <div class="text-body2 text-weight-bold"><u>{{ combinedSekretarisName }}</u></div>
@@ -7286,28 +7281,18 @@ window.CompFinanceReport = {
             <div class="col-6 report-sig-half">
               <div class="text-caption text-grey-7">Disusun oleh,</div>
               <div class="text-body2 text-weight-bold">Bendahara {{ settings.nama_rt }}</div>
-              <div class="row items-center justify-center no-wrap q-gutter-sm q-my-xs" style="height: 84px;">
+              <div class="row items-center justify-center no-wrap q-gutter-sm q-my-xs" style="min-height: 84px;">
                 <img
                   v-if="settings.ttd_bendahara_rt_url"
                   :src="settings.ttd_bendahara_rt_url"
                   alt="TTD Bendahara 1 RT"
-                  :style="{
-                    maxHeight: '74px',
-                    maxWidth: (settings.ttd_bendahara_rt_url && settings.ttd_bendahara2_rt_url) ? '125px' : '170px',
-                    objectFit: 'contain',
-                    mixBlendMode: 'multiply'
-                  }"
+                  :style="sigReportImgStyle('bendahara', Boolean(settings.ttd_bendahara_rt_url && settings.ttd_bendahara2_rt_url))"
                 />
                 <img
                   v-if="settings.ttd_bendahara2_rt_url"
                   :src="settings.ttd_bendahara2_rt_url"
                   alt="TTD Bendahara 2 RT"
-                  :style="{
-                    maxHeight: '74px',
-                    maxWidth: (settings.ttd_bendahara_rt_url && settings.ttd_bendahara2_rt_url) ? '125px' : '170px',
-                    objectFit: 'contain',
-                    mixBlendMode: 'multiply'
-                  }"
+                  :style="sigReportImgStyle('bendahara2', Boolean(settings.ttd_bendahara_rt_url && settings.ttd_bendahara2_rt_url))"
                 />
               </div>
               <div class="text-body2 text-weight-bold"><u>{{ combinedBendaharaName }}</u></div>
@@ -7319,18 +7304,18 @@ window.CompFinanceReport = {
             <div class="col-12 col-sm-6">
               <div class="text-caption text-grey-7">Mengetahui,</div>
               <div class="text-body2 text-weight-bold">Ketua {{ settings.nama_rt }}</div>
-              <div class="row items-center justify-center relative-position q-my-xs" style="height: 88px;">
+              <div class="row items-center justify-center relative-position q-my-xs" style="min-height: 88px;">
                 <img
                   v-if="settings.stempel_rt_url"
                   :src="settings.stempel_rt_url"
                   alt="Stempel RT"
-                  style="position: absolute; left: 50%; top: 50%; transform: translate(-102%, -50%); max-height: 76px; max-width: 84px; object-fit: contain; opacity: 0.85; mix-blend-mode: multiply; pointer-events: none;"
+                  :style="sigReportImgStyle('stempel', false)"
                 />
                 <img
                   v-if="settings.ttd_ketua_rt_url"
                   :src="settings.ttd_ketua_rt_url"
                   alt="TTD Ketua RT"
-                  style="position: relative; z-index: 1; max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply; margin-left: 18px;"
+                  :style="sigReportImgStyle('ketua', false)"
                 />
               </div>
               <div class="text-body2 text-weight-bold"><u>{{ settings.ketua_rt || '____________________' }}</u></div>
@@ -7341,11 +7326,11 @@ window.CompFinanceReport = {
 
       <!-- Dialog Upload TTD Ketua RT, Sekretaris, Bendahara & Stempel -->
       <q-dialog v-model="sigDialog" persistent>
-        <q-card style="width: 780px; max-width: 96vw;">
+        <q-card style="width: 820px; max-width: 96vw;">
           <q-card-section class="bg-deep-purple-8 text-white row items-center justify-between">
             <div>
-              <div class="text-subtitle1 text-weight-bold">Upload Tanda Tangan &amp; Stempel Laporan</div>
-              <div class="text-caption text-purple-2">Gambar TTD &amp; stempel otomatis muncul di tampilan Laporan, Cetak, dan Export PDF (disarankan PNG latar transparan)</div>
+              <div class="text-subtitle1 text-weight-bold">Upload &amp; Atur Tanda Tangan &amp; Stempel Laporan</div>
+              <div class="text-caption text-purple-2">Atur gambar, ukuran besar/kecil, dan tingkat ketebalan TTD &amp; stempel (otomatis berlaku di Layar, Cetak, dan Export PDF)</div>
             </div>
             <q-btn flat round dense icon="close" v-close-popup :disable="savingSig" />
           </q-card-section>
@@ -7364,20 +7349,68 @@ window.CompFinanceReport = {
                     </div>
                     <div class="text-caption text-grey-6 q-mb-sm">{{ slot.hint }}</div>
 
-                    <!-- Preview Box -->
+                    <!-- Preview Box (Real-time mengikuti slider Ukuran & Ketebalan) -->
                     <div
-                      class="row items-center justify-center rounded-borders q-pa-sm q-mb-sm"
-                      style="height: 110px; background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 14px 14px; border: 1px dashed #94a3b8;"
+                      class="row items-center justify-center rounded-borders q-pa-sm q-mb-sm overflow-hidden"
+                      style="height: 116px; background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 14px 14px; border: 1px dashed #94a3b8;"
                     >
                       <img
                         v-if="sigSlotPreview(slot)"
                         :src="sigSlotPreview(slot)"
                         :alt="slot.label"
-                        style="max-height: 92px; max-width: 100%; object-fit: contain;"
+                        :style="sigPreviewImgStyle(slot.key)"
                       />
                       <div v-else class="text-caption text-grey-5 text-center">
                         <q-icon :name="slot.icon" size="26px" /><br />Belum ada gambar
                       </div>
+                    </div>
+
+                    <!-- Pengaturan Ukuran (Besar/Kecil) & Tingkat Ketebalan -->
+                    <div
+                      v-if="sigSlotPreview(slot)"
+                      class="q-px-sm q-py-xs q-mb-sm rounded-borders bg-white"
+                      style="border: 1px solid #e2e8f0;"
+                    >
+                      <div class="row items-center justify-between q-mb-xs">
+                        <span class="text-caption text-weight-medium text-grey-8">
+                          <q-icon name="photo_size_select_large" size="14px" class="q-mr-xs text-deep-purple-7" />
+                          Ukuran: <strong class="text-deep-purple-8">{{ sigStyles[slot.key].scale }}%</strong>
+                        </span>
+                        <q-btn
+                          v-if="sigStyles[slot.key].scale !== 100 || sigStyles[slot.key].bold !== 0"
+                          flat dense no-caps
+                          size="xs"
+                          color="grey-7"
+                          icon="restart_alt"
+                          label="Reset"
+                          @click="resetSigStyle(slot.key)"
+                        />
+                      </div>
+                      <q-slider
+                        v-model="sigStyles[slot.key].scale"
+                        :min="50"
+                        :max="180"
+                        :step="5"
+                        dense
+                        color="deep-purple-7"
+                        class="q-mb-xs"
+                      />
+                      <div class="row items-center justify-between">
+                        <span class="text-caption text-weight-medium text-grey-8">
+                          <q-icon name="line_weight" size="14px" class="q-mr-xs text-teal-8" />
+                          Ketebalan: <strong class="text-teal-9">{{ boldLabel(sigStyles[slot.key].bold) }}</strong>
+                        </span>
+                        <span class="text-grey-6" style="font-size: 10px;">Tipis ↔ Tebal</span>
+                      </div>
+                      <q-slider
+                        v-model="sigStyles[slot.key].bold"
+                        :min="0"
+                        :max="5"
+                        :step="1"
+                        markers
+                        dense
+                        color="teal-8"
+                      />
                     </div>
 
                     <q-input
@@ -7476,16 +7509,151 @@ window.CompFinanceReport = {
       bendahara2: { payload: null, preview: '', removed: false }
     });
 
+    function defaultSigStylesObj() {
+      return {
+        ketua: { scale: 100, bold: 0 },
+        stempel: { scale: 100, bold: 0 },
+        sekretaris: { scale: 100, bold: 0 },
+        sekretaris2: { scale: 100, bold: 0 },
+        bendahara: { scale: 100, bold: 0 },
+        bendahara2: { scale: 100, bold: 0 }
+      };
+    }
+
+    function parseSigStylesFromSettings(cfg) {
+      const base = defaultSigStylesObj();
+      try {
+        const raw = cfg && cfg.ttd_styles_json
+          ? (typeof cfg.ttd_styles_json === 'string' ? JSON.parse(cfg.ttd_styles_json) : cfg.ttd_styles_json)
+          : {};
+        Object.keys(base).forEach(k => {
+          const s = raw && raw[k] ? raw[k] : {};
+          base[k] = {
+            scale: Math.max(50, Math.min(180, Math.round(Number(s.scale) || 100))),
+            bold: Math.max(0, Math.min(5, Math.round(Number(s.bold) || 0)))
+          };
+        });
+      } catch (e) {}
+      return base;
+    }
+
+    const savedSigStyles = computed(() => parseSigStylesFromSettings(props.settings));
+    const sigStyles = reactive(defaultSigStylesObj());
+
+    const BOLD_LABELS = ['Normal', 'Tebal 1', 'Tebal 2', 'Tebal 3', 'Tebal 4', 'Ekstra'];
+    function boldLabel(lvl) {
+      const n = Math.max(0, Math.min(5, Math.round(Number(lvl) || 0)));
+      return BOLD_LABELS[n] || 'Normal';
+    }
+
+    function buildSigFilter(boldLevel, isStempel) {
+      const b = Math.max(0, Math.min(5, Math.round(Number(boldLevel) || 0)));
+      if (b <= 0) return 'none';
+      if (isStempel) {
+        const contrast = (1 + b * 0.16).toFixed(2);
+        const saturate = (1 + b * 0.22).toFixed(2);
+        const brightness = (1 - b * 0.05).toFixed(2);
+        const r = (b * 0.18).toFixed(2);
+        return 'contrast(' + contrast + ') saturate(' + saturate + ') brightness(' + brightness + ') drop-shadow(0 0 ' + r + 'px rgba(55,48,163,0.45))';
+      }
+      const specs = [
+        null,
+        { c: 1.25, br: 0.90, d: 0.30, a: 0.55 },
+        { c: 1.45, br: 0.82, d: 0.45, a: 0.72 },
+        { c: 1.65, br: 0.74, d: 0.65, a: 0.85 },
+        { c: 1.85, br: 0.66, d: 0.85, a: 0.92 },
+        { c: 2.10, br: 0.58, d: 1.10, a: 0.98 }
+      ];
+      const sp = specs[b];
+      const col = 'rgba(15,23,42,' + sp.a + ')';
+      return 'contrast(' + sp.c + ') brightness(' + sp.br + ') ' +
+        'drop-shadow(' + sp.d + 'px 0 0 ' + col + ') ' +
+        'drop-shadow(-' + sp.d + 'px 0 0 ' + col + ') ' +
+        'drop-shadow(0 ' + sp.d + 'px 0 ' + col + ') ' +
+        'drop-shadow(0 -' + sp.d + 'px 0 ' + col + ')';
+    }
+
+    function sigPreviewImgStyle(slotKey) {
+      const st = sigStyles[slotKey] || { scale: 100, bold: 0 };
+      const isStempel = slotKey === 'stempel';
+      const h = Math.round(56 * (st.scale / 100));
+      return {
+        height: h + 'px',
+        maxHeight: '104px',
+        maxWidth: '100%',
+        width: 'auto',
+        objectFit: 'contain',
+        filter: buildSigFilter(st.bold, isStempel),
+        opacity: isStempel ? Math.min(1, 0.85 + st.bold * 0.03) : 1,
+        transition: 'height 0.12s ease, filter 0.12s ease'
+      };
+    }
+
+    function sigReportImgStyle(slotKey, isPaired) {
+      const st = (savedSigStyles.value && savedSigStyles.value[slotKey]) || { scale: 100, bold: 0 };
+      const mult = (st.scale || 100) / 100;
+      const isStempel = slotKey === 'stempel';
+      const filterVal = buildSigFilter(st.bold, isStempel);
+      if (isStempel) {
+        return {
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-102%, -50%)',
+          height: Math.round(68 * mult) + 'px',
+          maxWidth: Math.round(92 * mult) + 'px',
+          width: 'auto',
+          objectFit: 'contain',
+          opacity: Math.min(1, 0.85 + st.bold * 0.03),
+          mixBlendMode: 'multiply',
+          pointerEvents: 'none',
+          filter: filterVal
+        };
+      }
+      if (slotKey === 'ketua') {
+        return {
+          position: 'relative',
+          zIndex: 1,
+          height: Math.round(68 * mult) + 'px',
+          maxWidth: Math.round(170 * mult) + 'px',
+          width: 'auto',
+          objectFit: 'contain',
+          mixBlendMode: 'multiply',
+          marginLeft: '18px',
+          filter: filterVal
+        };
+      }
+      const baseMaxW = isPaired ? 125 : 170;
+      return {
+        height: Math.round(66 * mult) + 'px',
+        maxWidth: Math.round(baseMaxW * Math.min(mult, isPaired ? 1.35 : 1.7)) + 'px',
+        width: 'auto',
+        objectFit: 'contain',
+        mixBlendMode: 'multiply',
+        filter: filterVal
+      };
+    }
+
+    function resetSigStyle(slotKey) {
+      if (sigStyles[slotKey]) {
+        sigStyles[slotKey].scale = 100;
+        sigStyles[slotKey].bold = 0;
+      }
+    }
+
     function openSigDialog() {
       sigNames.ketua_rt = (props.settings && props.settings.ketua_rt) || '';
       sigNames.sekretaris_rt = (props.settings && props.settings.sekretaris_rt) || '';
       sigNames.sekretaris2_rt = (props.settings && props.settings.sekretaris2_rt) || '';
       sigNames.bendahara_rt = (props.settings && props.settings.bendahara_rt) || '';
       sigNames.bendahara2_rt = (props.settings && props.settings.bendahara2_rt) || '';
+      const curStyles = parseSigStylesFromSettings(props.settings);
       sigSlots.forEach(s => {
         sigDraft[s.key].payload = null;
         sigDraft[s.key].preview = '';
         sigDraft[s.key].removed = false;
+        sigStyles[s.key].scale = curStyles[s.key].scale;
+        sigStyles[s.key].bold = curStyles[s.key].bold;
       });
       sigDialog.value = true;
     }
@@ -7595,12 +7763,20 @@ window.CompFinanceReport = {
     async function saveSignatures() {
       savingSig.value = true;
       try {
+        const cleanStyles = {};
+        sigSlots.forEach(s => {
+          cleanStyles[s.key] = {
+            scale: Math.max(50, Math.min(180, Math.round(Number(sigStyles[s.key].scale) || 100))),
+            bold: Math.max(0, Math.min(5, Math.round(Number(sigStyles[s.key].bold) || 0)))
+          };
+        });
         const payload = {
           ketua_rt: sigNames.ketua_rt,
           sekretaris_rt: sigNames.sekretaris_rt,
           sekretaris2_rt: sigNames.sekretaris2_rt,
           bendahara_rt: sigNames.bendahara_rt,
-          bendahara2_rt: sigNames.bendahara2_rt
+          bendahara2_rt: sigNames.bendahara2_rt,
+          ttd_styles_json: JSON.stringify(cleanStyles)
         };
         sigSlots.forEach(s => {
           const d = sigDraft[s.key];
@@ -7610,7 +7786,7 @@ window.CompFinanceReport = {
         const updated = await SiwargaAPI.call('saveReportSignatures', payload);
         emit('settings-updated', updated);
         sigDialog.value = false;
-        $q.notify({ type: 'positive', message: 'TTD & Stempel laporan berhasil disimpan!' });
+        $q.notify({ type: 'positive', message: 'TTD, Stempel & pengaturan ukuran/ketebalan berhasil disimpan!' });
       } catch (err) {
         $q.notify({ type: 'negative', message: err.message });
       } finally {
@@ -7947,19 +8123,92 @@ window.CompFinanceReport = {
           } catch (e) {}
         }
 
-        function addSigImageFit(dataUrl, centerX, topY, maxW, maxH) {
+        const pdfSigStyles = parseSigStylesFromSettings(cfg);
+
+        function applyBoldnessToDataUrl(dataUrl, boldLevel, isStempel) {
+          return new Promise(resolve => {
+            const b = Math.max(0, Math.min(5, Math.round(Number(boldLevel) || 0)));
+            if (!dataUrl || b <= 0 || dataUrl.indexOf('data:image/') !== 0) return resolve(dataUrl);
+            const img = new Image();
+            img.onload = () => {
+              try {
+                const w = img.naturalWidth || img.width || 300;
+                const h = img.naturalHeight || img.height || 150;
+                const pad = Math.ceil(b * 2.5);
+                const canvas = document.createElement('canvas');
+                canvas.width = w + pad * 2;
+                canvas.height = h + pad * 2;
+                const ctx = canvas.getContext('2d');
+                if (isStempel) {
+                  ctx.filter = 'contrast(' + (1 + b * 0.16).toFixed(2) + ') saturate(' + (1 + b * 0.22).toFixed(2) + ') brightness(' + (1 - b * 0.05).toFixed(2) + ')';
+                  const r = Math.max(0.35, b * 0.25 * (Math.max(w, h) / 360));
+                  ctx.drawImage(img, pad, pad, w, h);
+                  ctx.globalAlpha = 0.45;
+                  ctx.drawImage(img, pad + r, pad, w, h);
+                  ctx.drawImage(img, pad - r, pad, w, h);
+                  ctx.drawImage(img, pad, pad + r, w, h);
+                  ctx.drawImage(img, pad, pad - r, w, h);
+                  ctx.globalAlpha = 1;
+                } else {
+                  ctx.filter = 'contrast(' + (1 + b * 0.22).toFixed(2) + ') brightness(' + Math.max(0.55, 1 - b * 0.08).toFixed(2) + ')';
+                  const baseR = Math.max(0.5, b * 0.52 * (Math.max(w, h) / 340));
+                  const offsets = [
+                    [0, 0],
+                    [baseR, 0], [-baseR, 0], [0, baseR], [0, -baseR],
+                    [baseR * 0.7, baseR * 0.7], [-baseR * 0.7, baseR * 0.7],
+                    [baseR * 0.7, -baseR * 0.7], [-baseR * 0.7, -baseR * 0.7]
+                  ];
+                  offsets.forEach(o => {
+                    ctx.drawImage(img, pad + o[0], pad + o[1], w, h);
+                  });
+                  if (b >= 3) {
+                    const r2 = baseR * 1.45;
+                    ctx.drawImage(img, pad + r2, pad, w, h);
+                    ctx.drawImage(img, pad - r2, pad, w, h);
+                    ctx.drawImage(img, pad, pad + r2, w, h);
+                    ctx.drawImage(img, pad, pad - r2, w, h);
+                  }
+                }
+                resolve(canvas.toDataURL('image/png'));
+              } catch (e) {
+                resolve(dataUrl);
+              }
+            };
+            img.onerror = () => resolve(dataUrl);
+            img.src = dataUrl;
+          });
+        }
+
+        const pdfImgMap = [
+          { imgKey: 'ttd_ketua_rt', styleKey: 'ketua', isStempel: false },
+          { imgKey: 'stempel_rt', styleKey: 'stempel', isStempel: true },
+          { imgKey: 'ttd_sekretaris_rt', styleKey: 'sekretaris', isStempel: false },
+          { imgKey: 'ttd_sekretaris2_rt', styleKey: 'sekretaris2', isStempel: false },
+          { imgKey: 'ttd_bendahara_rt', styleKey: 'bendahara', isStempel: false },
+          { imgKey: 'ttd_bendahara2_rt', styleKey: 'bendahara2', isStempel: false }
+        ];
+        await Promise.all(pdfImgMap.map(async item => {
+          if (sigImgs[item.imgKey] && pdfSigStyles[item.styleKey] && pdfSigStyles[item.styleKey].bold > 0) {
+            sigImgs[item.imgKey] = await applyBoldnessToDataUrl(sigImgs[item.imgKey], pdfSigStyles[item.styleKey].bold, item.isStempel);
+          }
+        }));
+
+        function addSigImageFit(dataUrl, centerX, centerY, maxW, maxH, scalePct) {
           if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.indexOf('data:image/') !== 0) return;
           try {
+            const mult = Math.max(0.5, Math.min(1.8, (Number(scalePct) || 100) / 100));
+            const effW = maxW * mult;
+            const effH = maxH * mult;
             const propsImg = doc.getImageProperties(dataUrl);
             const ratio = (propsImg.width || 1) / (propsImg.height || 1);
-            let drawW = maxW;
+            let drawW = effW;
             let drawH = drawW / ratio;
-            if (drawH > maxH) {
-              drawH = maxH;
+            if (drawH > effH) {
+              drawH = effH;
               drawW = drawH * ratio;
             }
             const fmt = dataUrl.indexOf('image/jpeg') !== -1 || dataUrl.indexOf('image/jpg') !== -1 ? 'JPEG' : 'PNG';
-            doc.addImage(dataUrl, fmt, centerX - drawW / 2, topY + (maxH - drawH) / 2, drawW, drawH);
+            doc.addImage(dataUrl, fmt, centerX - drawW / 2, centerY - drawH / 2, drawW, drawH);
           } catch (e) {}
         }
 
@@ -7974,8 +8223,15 @@ window.CompFinanceReport = {
         doc.text('Diperiksa oleh,', leftX, sigY, { align: 'center' });
         doc.text('Disusun oleh,', rightX, sigY, { align: 'center' });
 
-        const imgRow1Y = sigY + 6.5;
-        const nameRow1Y = sigY + 28.5;
+        const maxRow1Scale = Math.max(
+          sigImgs.ttd_sekretaris_rt ? pdfSigStyles.sekretaris.scale : 100,
+          sigImgs.ttd_sekretaris2_rt ? pdfSigStyles.sekretaris2.scale : 100,
+          sigImgs.ttd_bendahara_rt ? pdfSigStyles.bendahara.scale : 100,
+          sigImgs.ttd_bendahara2_rt ? pdfSigStyles.bendahara2.scale : 100
+        );
+        const row1BoxH = Math.max(19, Math.round(18 * Math.min(1.55, maxRow1Scale / 100)));
+        const imgRow1CenterY = sigY + 6.5 + row1BoxH / 2;
+        const nameRow1Y = sigY + 6.5 + row1BoxH + 3.5;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8.5);
         doc.setTextColor(30, 41, 59);
@@ -7985,21 +8241,21 @@ window.CompFinanceReport = {
         doc.text('Bendahara ' + namaRt, rightX, sigY + 4.8, { align: 'center' });
 
         if (sigImgs.ttd_sekretaris_rt && sigImgs.ttd_sekretaris2_rt) {
-          addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX - 16, imgRow1Y, 28, 18);
-          addSigImageFit(sigImgs.ttd_sekretaris2_rt, leftX + 16, imgRow1Y, 28, 18);
+          addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX - 16, imgRow1CenterY, 28, 18, pdfSigStyles.sekretaris.scale);
+          addSigImageFit(sigImgs.ttd_sekretaris2_rt, leftX + 16, imgRow1CenterY, 28, 18, pdfSigStyles.sekretaris2.scale);
         } else if (sigImgs.ttd_sekretaris_rt) {
-          addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX, imgRow1Y, 36, 19);
+          addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX, imgRow1CenterY, 36, 19, pdfSigStyles.sekretaris.scale);
         } else if (sigImgs.ttd_sekretaris2_rt) {
-          addSigImageFit(sigImgs.ttd_sekretaris2_rt, leftX, imgRow1Y, 36, 19);
+          addSigImageFit(sigImgs.ttd_sekretaris2_rt, leftX, imgRow1CenterY, 36, 19, pdfSigStyles.sekretaris2.scale);
         }
 
         if (sigImgs.ttd_bendahara_rt && sigImgs.ttd_bendahara2_rt) {
-          addSigImageFit(sigImgs.ttd_bendahara_rt, rightX - 16, imgRow1Y, 28, 18);
-          addSigImageFit(sigImgs.ttd_bendahara2_rt, rightX + 16, imgRow1Y, 28, 18);
+          addSigImageFit(sigImgs.ttd_bendahara_rt, rightX - 16, imgRow1CenterY, 28, 18, pdfSigStyles.bendahara.scale);
+          addSigImageFit(sigImgs.ttd_bendahara2_rt, rightX + 16, imgRow1CenterY, 28, 18, pdfSigStyles.bendahara2.scale);
         } else if (sigImgs.ttd_bendahara_rt) {
-          addSigImageFit(sigImgs.ttd_bendahara_rt, rightX, imgRow1Y, 36, 19);
+          addSigImageFit(sigImgs.ttd_bendahara_rt, rightX, imgRow1CenterY, 36, 19, pdfSigStyles.bendahara.scale);
         } else if (sigImgs.ttd_bendahara2_rt) {
-          addSigImageFit(sigImgs.ttd_bendahara2_rt, rightX, imgRow1Y, 36, 19);
+          addSigImageFit(sigImgs.ttd_bendahara2_rt, rightX, imgRow1CenterY, 36, 19, pdfSigStyles.bendahara2.scale);
         }
 
         const sekDisplay = formatCombinedName(cfg.sekretaris_rt, cfg.sekretaris2_rt);
@@ -8012,6 +8268,11 @@ window.CompFinanceReport = {
         doc.line(rightX - benHalfW, nameRow1Y + 1, rightX + benHalfW, nameRow1Y + 1);
 
         // Baris 2: Mengetahui, Ketua RT (Tengah Bawah + Stempel di Sisi Kiri TTD)
+        const maxRow2Scale = Math.max(
+          sigImgs.ttd_ketua_rt ? pdfSigStyles.ketua.scale : 100,
+          sigImgs.stempel_rt ? pdfSigStyles.stempel.scale : 100
+        );
+        const row2BoxH = Math.max(20, Math.round(19 * Math.min(1.55, maxRow2Scale / 100)));
         const sigRow2Y = nameRow1Y + 10;
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
@@ -8021,15 +8282,15 @@ window.CompFinanceReport = {
         doc.setTextColor(30, 41, 59);
         doc.text('Ketua ' + namaRt, centerX, sigRow2Y + 4.8, { align: 'center' });
 
-        const imgRow2Y = sigRow2Y + 6.5;
+        const imgRow2CenterY = sigRow2Y + 6.5 + row2BoxH / 2;
         if (sigImgs.stempel_rt) {
-          addSigImageFit(sigImgs.stempel_rt, centerX - 15, imgRow2Y, 22, 20);
+          addSigImageFit(sigImgs.stempel_rt, centerX - 15, imgRow2CenterY, 22, 20, pdfSigStyles.stempel.scale);
         }
         if (sigImgs.ttd_ketua_rt) {
-          addSigImageFit(sigImgs.ttd_ketua_rt, centerX + 4, imgRow2Y, 36, 19);
+          addSigImageFit(sigImgs.ttd_ketua_rt, centerX + 4, imgRow2CenterY, 36, 19, pdfSigStyles.ketua.scale);
         }
 
-        const nameRow2Y = sigRow2Y + 29;
+        const nameRow2Y = sigRow2Y + 6.5 + row2BoxH + 3.5;
         doc.setFontSize(8.5);
         doc.text(cfg.ketua_rt || '____________________', centerX, nameRow2Y, { align: 'center' });
         doc.setDrawColor(30, 41, 59);
@@ -8085,7 +8346,8 @@ window.CompFinanceReport = {
     onMounted(loadReport);
 
     return {
-      loading, exportingPdf, canManageSignatures, sigDialog, savingSig, sigSlots, sigNames, sigDraft, combinedSekretarisName, combinedBendaharaName,
+      loading, exportingPdf, canManageSignatures, sigDialog, savingSig, sigSlots, sigNames, sigDraft, sigStyles, savedSigStyles, combinedSekretarisName, combinedBendaharaName,
+      boldLabel, sigPreviewImgStyle, sigReportImgStyle, resetSigStyle,
       openSigDialog, sigSlotPreview, triggerSigFile, onPickSigFile, markRemoveSig, saveSignatures,
       currentYm, filterMode, selectedPeriode, periodeOptions, activePeriodLabel,
       filters, report, ledgerColumns, loadReport, onChangeFilterMode, shiftMonth, goCurrentMonth, selectRecapMonth,
@@ -11259,13 +11521,14 @@ window.CompProfile = {
           try {
             await loadOneSignalSdk();
             const basePath = (window.location.pathname || '/').replace(/\/[^/]*$/, '/') || '/';
+            const swPath = basePath.replace(/^\//, '') + 'OneSignalSDKWorker.js';
             window.OneSignalDeferred = window.OneSignalDeferred || [];
             window.OneSignalDeferred.push(async function (OneSignal) {
               try {
                 if (oneSignalInitializedAppId !== appId) {
                   await OneSignal.init({
                     appId: appId,
-                    serviceWorkerPath: 'OneSignalSDKWorker.js',
+                    serviceWorkerPath: swPath,
                     serviceWorkerParam: { scope: basePath },
                     notifyButton: { enable: false },
                     allowLocalhostAsSecureOrigin: true
