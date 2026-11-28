@@ -6802,11 +6802,10 @@ window.CompFinanceReport = {
         >
           <template #avatar><q-icon name="event_repeat" color="deep-purple-7" size="22px" /></template>
           <div>
-            <strong>Info IPL Rapel Bulan Berikutnya:</strong>
-            Terdapat pembayaran IPL di muka untuk periode setelah bulan ini sebesar
+            <strong>Info Deposit IPL</strong> sebesar
             <strong class="mono-num">{{ formatRupiah(report.deferredFutureTotal) }}</strong>
-            ({{ formatFuturePeriods(report.deferredFuturePeriods) }}) yang otomatis dialokasikan ke laporan bulan masing-masing.
-            Total <strong>Saldo Kas Riil di Rekening</strong> saat ini:
+            ({{ formatFuturePeriods(report.deferredFuturePeriods) }}) yang otomatis dialokasikan pada bulan masing-masing.
+            Total <strong>Saldo Kas Riil di Rekening</strong> sebesar:
             <strong class="mono-num text-teal-9">{{ formatRupiah(report.saldoKasRiil) }}</strong>.
           </div>
         </q-banner>
@@ -7543,9 +7542,9 @@ window.CompFinanceReport = {
           doc.setFontSize(7.5);
           doc.setTextColor(76, 29, 149);
           doc.text(
-            'Info IPL Rapel Bulan Berikutnya: ' + SiwargaAPI.formatRupiah(report.deferredFutureTotal) +
-            ' (' + formatFuturePeriods(report.deferredFuturePeriods) + ') dialokasikan ke bulan masing-masing · Saldo Kas Riil di Rekening: ' +
-            SiwargaAPI.formatRupiah(report.saldoKasRiil),
+            'Info Deposit IPL sebesar ' + SiwargaAPI.formatRupiah(report.deferredFutureTotal) +
+            ' (' + formatFuturePeriods(report.deferredFuturePeriods) + ') yang otomatis dialokasikan pada bulan masing-masing. Total Saldo Kas Riil di Rekening sebesar: ' +
+            SiwargaAPI.formatRupiah(report.saldoKasRiil) + '.',
             margin + 2.5,
             boxY + boxH + 8.8
           );
