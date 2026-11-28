@@ -1077,14 +1077,61 @@
   }
 
   function mockComputeBukuKas(db, filters) {
-    const startDate = (filters && filters.startDate) || '';
-    const endDate = (filters && filters.endDate) || '';
-    const allKas = db.kas.slice().sort(function (a, b) {
+    const reqPeriode = (filters && filters.periode) ? String(filters.periode).trim() : '';
+    let startDate = (filters && filters.startDate) || '';
+    let endDate = (filters && filters.endDate) || '';
+    if (/^\d{4}-\d{2}$/.test(reqPeriode)) {
+      const p = reqPeriode.split('-');
+      const lastD = new Date(parseInt(p[0], 10), parseInt(p[1], 10), 0).getDate();
+      startDate = reqPeriode + '-01';
+      endDate = reqPeriode + '-' + (lastD < 10 ? '0' + lastD : String(lastD));
+    }
+
+    const saldoAwalDasar = Number(db.settings.saldo_awal_kas || 0);
+    let totalMasukRiil = 0, totalKeluarRiil = 0;
+    db.kas.forEach(function (tx) {
+      if (tx.tipe === 'Masuk') totalMasukRiil += Number(tx.nominal || 0);
+      else totalKeluarRiil += Number(tx.nominal || 0);
+    });
+    const saldoKasRiil = saldoAwalDasar + totalMasukRiil - totalKeluarRiil;
+
+    // Alokasikan rapel per bulan periode IPL di mock mode juga
+    const allocated = [];
+    db.kas.forEach(function (tx) {
+      const nom = Number(tx.nominal || 0);
+      if (tx.tipe === 'Masuk') {
+        const linked = (db.tagihan || []).filter(function (t) {
+          return String(t.status) === 'Lunas' && (
+            (t.kas_id && t.kas_id === tx.id) ||
+            (tx.referensi_id && ((t.batch_id && t.batch_id === tx.referensi_id) || t.id === tx.referensi_id))
+          );
+        });
+        const sumL = linked.reduce(function (s, t) { return s + Number(t.total || t.nominal || 0); }, 0);
+        if (linked.length >= 1 && sumL === nom) {
+          const payYm = String(tx.tanggal || '').substring(0, 7);
+          linked.sort(function (a, b) { return String(a.periode).localeCompare(String(b.periode)); }).forEach(function (t, idx) {
+            const tYm = String(t.periode || '').substring(0, 7);
+            const effDate = tYm === payYm ? tx.tanggal : (tYm + '-01');
+            const desc = linked.length > 1
+              ? ('Pembayaran IPL ' + formatPeriodeID(tYm) + (tYm !== payYm ? (' (Rapel · dibayar ' + formatDateID(tx.tanggal) + ')') : ' (Rapel)') + ' - Rumah ' + t.no_rumah + ' (' + t.kepala_keluarga + ')')
+              : tx.deskripsi;
+            allocated.push(Object.assign({}, tx, { id: tx.id + '_' + tYm + '_' + idx, tanggal: effDate, nominal: Number(t.total || t.nominal || 0), deskripsi: desc }));
+          });
+          return;
+        }
+      }
+      allocated.push(tx);
+    });
+
+    const allKas = allocated.sort(function (a, b) {
       return String(a.tanggal).localeCompare(String(b.tanggal)) || String(a.created_at).localeCompare(String(b.created_at));
     });
-    let saldoAwalPeriode = Number(db.settings.saldo_awal_kas || 0);
+    let saldoAwalPeriode = saldoAwalDasar;
     let totalMasuk = 0;
     let totalKeluar = 0;
+    let deferredFutureTotal = 0;
+    let deferredFutureCount = 0;
+    const deferredPeriodsSet = {};
     const ledger = [];
     const perKategoriMasuk = {};
     const perKategoriKeluar = {};
@@ -1094,7 +1141,15 @@
       const nom = Number(tx.nominal || 0);
       const delta = isMasuk ? nom : -nom;
       if (startDate && tx.tanggal < startDate) { saldoAwalPeriode += delta; return; }
-      if (endDate && tx.tanggal > endDate) return;
+      if (endDate && tx.tanggal > endDate) {
+        if (isMasuk) {
+          deferredFutureTotal += nom;
+          deferredFutureCount++;
+          const ymF = String(tx.tanggal || '').substring(0, 7);
+          if (/^\d{4}-\d{2}$/.test(ymF)) deferredPeriodsSet[ymF] = true;
+        }
+        return;
+      }
       if (isMasuk) { totalMasuk += nom; perKategoriMasuk[tx.kategori] = (perKategoriMasuk[tx.kategori] || 0) + nom; }
       else { totalKeluar += nom; perKategoriKeluar[tx.kategori] = (perKategoriKeluar[tx.kategori] || 0) + nom; }
       const prev = ledger.length ? ledger[ledger.length - 1].saldo_berjalan : saldoAwalPeriode;
@@ -1104,21 +1159,39 @@
     const mMap = {};
     allKas.forEach(function (tx) {
       const ym = String(tx.tanggal || '').substring(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(ym)) return;
       if (!mMap[ym]) mMap[ym] = { periode: ym, masuk: 0, keluar: 0 };
       if (tx.tipe === 'Masuk') mMap[ym].masuk += Number(tx.nominal || 0);
       else mMap[ym].keluar += Number(tx.nominal || 0);
     });
-    const monthlySeries = Object.keys(mMap).sort().slice(-6).map(function (k) { return mMap[k]; });
+    const sortedM = Object.keys(mMap).sort();
+    let runS = saldoAwalDasar;
+    const monthlyRecapAsc = sortedM.map(function (k) {
+      const m = mMap[k];
+      runS += (m.masuk - m.keluar);
+      return { periode: m.periode, masuk: m.masuk, keluar: m.keluar, selisih: m.masuk - m.keluar, saldo_akhir: runS };
+    });
+    const curYm = currentPeriodeClient();
+    const upToCur = sortedM.filter(function (k) { return k <= curYm; });
+    const monthlySeries = (upToCur.length ? upToCur.slice(-6) : sortedM.slice(-6)).map(function (k) { return mMap[k]; });
     return {
+      periode: /^\d{4}-\d{2}$/.test(reqPeriode) ? reqPeriode : '',
+      startDate: startDate,
+      endDate: endDate,
       saldoAwalPeriode: saldoAwalPeriode,
       totalMasuk: totalMasuk,
       totalKeluar: totalKeluar,
       surplusDefisit: totalMasuk - totalKeluar,
       saldoAkhir: saldoAwalPeriode + totalMasuk - totalKeluar,
+      saldoKasRiil: saldoKasRiil,
+      deferredFutureTotal: deferredFutureTotal,
+      deferredFutureCount: deferredFutureCount,
+      deferredFuturePeriods: Object.keys(deferredPeriodsSet).sort(),
       ledger: ledger,
       perKategoriMasuk: perKategoriMasuk,
       perKategoriKeluar: perKategoriKeluar,
-      monthlySeries: monthlySeries
+      monthlySeries: monthlySeries,
+      monthlyRecap: monthlyRecapAsc.slice().reverse()
     };
   }
 
@@ -6036,14 +6109,85 @@ window.CompFinanceReport = {
         </div>
       </div>
 
-      <!-- Filter Rentang Tanggal -->
+      <!-- Filter Laporan Per Bulan / Rentang Tanggal / Semua Periode -->
       <q-card flat class="surface-card q-pa-md q-mb-md no-print">
         <div class="row q-col-gutter-sm items-center">
-          <div class="col-12 col-sm-3"><q-input v-model="filters.startDate" type="date" outlined dense label="Dari Tanggal" /></div>
-          <div class="col-12 col-sm-3"><q-input v-model="filters.endDate" type="date" outlined dense label="Sampai Tanggal" /></div>
-          <div class="col-12 col-sm-6 row q-gutter-sm">
-            <q-btn unelevated color="teal-8" icon="filter_alt" label="Terapkan" @click="loadReport" :loading="loading" />
-            <q-btn outline color="grey-8" label="Semua Periode" @click="resetFilters" />
+          <div class="col-12 col-md-auto">
+            <q-btn-toggle
+              v-model="filterMode"
+              unelevated dense no-caps
+              toggle-color="teal-8"
+              color="grey-2"
+              text-color="grey-9"
+              :options="[
+                { label: 'Per Bulan', value: 'month', icon: 'calendar_month' },
+                { label: 'Rentang Tanggal', value: 'range', icon: 'date_range' },
+                { label: 'Semua Periode', value: 'all', icon: 'all_inclusive' }
+              ]"
+              @update:model-value="onChangeFilterMode"
+            />
+          </div>
+
+          <template v-if="filterMode === 'month'">
+            <div class="col-12 col-sm-7 col-md-5">
+              <div class="row items-center no-wrap q-gutter-xs">
+                <q-btn outline dense round color="teal-8" icon="chevron_left" @click="shiftMonth(-1)">
+                  <q-tooltip>Bulan Sebelumnya</q-tooltip>
+                </q-btn>
+                <q-select
+                  v-model="selectedPeriode"
+                  :options="periodeOptions"
+                  option-value="value"
+                  option-label="label"
+                  emit-value map-options
+                  outlined dense
+                  class="col"
+                  label="Pilih Bulan Laporan"
+                  @update:model-value="loadReport"
+                />
+                <q-btn outline dense round color="teal-8" icon="chevron_right" @click="shiftMonth(1)">
+                  <q-tooltip>Bulan Berikutnya</q-tooltip>
+                </q-btn>
+              </div>
+            </div>
+            <div class="col-12 col-sm-5 col-md-auto row q-gutter-xs">
+              <q-btn outline color="teal-8" icon="today" label="Bulan Ini" @click="goCurrentMonth" :loading="loading" />
+            </div>
+          </template>
+
+          <template v-else-if="filterMode === 'range'">
+            <div class="col-6 col-sm-3"><q-input v-model="filters.startDate" type="date" outlined dense label="Dari Tanggal" /></div>
+            <div class="col-6 col-sm-3"><q-input v-model="filters.endDate" type="date" outlined dense label="Sampai Tanggal" /></div>
+            <div class="col-12 col-sm-auto row q-gutter-xs">
+              <q-btn unelevated color="teal-8" icon="filter_alt" label="Terapkan" @click="loadReport" :loading="loading" />
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="col-12 col-sm text-caption text-grey-7">
+              Menampilkan seluruh mutasi kas sejak awal pembukuan (termasuk alokasi rapel seluruh bulan).
+            </div>
+          </template>
+        </div>
+
+        <!-- Ringkasan Cepat Per Bulan (Klik bulan untuk melihat rincian) -->
+        <div v-if="report.monthlyRecap && report.monthlyRecap.length" class="q-mt-md q-pt-sm" style="border-top: 1px dashed #e2e8f0;">
+          <div class="text-caption text-weight-bold text-grey-7 q-mb-xs">Rekap Dana Masuk &amp; Keluar per Bulan (Klik untuk buka):</div>
+          <div class="row q-gutter-xs">
+            <q-chip
+              v-for="m in report.monthlyRecap"
+              :key="m.periode"
+              clickable dense
+              :outline="!(filterMode === 'month' && selectedPeriode === m.periode)"
+              :color="(filterMode === 'month' && selectedPeriode === m.periode) ? 'teal-8' : (m.periode > currentYm ? 'deep-purple-7' : 'blue-grey-7')"
+              :text-color="(filterMode === 'month' && selectedPeriode === m.periode) ? 'white' : 'grey-9'"
+              @click="selectRecapMonth(m.periode)"
+            >
+              <strong>{{ formatPeriodeID(m.periode) }}</strong>
+              <span class="q-ml-xs" style="font-size: 11px;">
+                (+{{ formatRupiah(m.masuk) }} / -{{ formatRupiah(m.keluar) }})
+              </span>
+            </q-chip>
           </div>
         </div>
       </q-card>
@@ -6057,15 +6201,15 @@ window.CompFinanceReport = {
           <div class="col text-center">
             <div class="text-subtitle1 text-md-h6 text-weight-bolder text-teal-10">LAPORAN BUKU KAS KEUANGAN {{ settings.nama_rt }}</div>
             <div class="text-caption text-md-subtitle2 text-grey-8">{{ settings.nama_lingkungan }} · {{ settings.kelurahan }}</div>
-            <div class="text-caption text-grey-6">
-              Periode: {{ filters.startDate ? formatDateID(filters.startDate) : 'Awal Pembukuan' }} s/d {{ filters.endDate ? formatDateID(filters.endDate) : 'Hari Ini' }}
+            <div class="text-caption text-grey-7 text-weight-medium">
+              Periode: {{ activePeriodLabel }}
             </div>
           </div>
           <div style="width: 56px;" class="gt-xs"></div>
         </div>
 
         <!-- Ringkasan Saldo -->
-        <div class="row q-col-gutter-sm q-col-gutter-sm-md q-mb-md q-mb-md-lg">
+        <div class="row q-col-gutter-sm q-col-gutter-sm-md q-mb-md">
           <div class="col-6 col-md-3">
             <div class="q-pa-sm q-pa-sm-md rounded-borders bg-grey-1">
               <div class="text-caption text-grey-7">Saldo Awal</div>
@@ -6086,11 +6230,29 @@ window.CompFinanceReport = {
           </div>
           <div class="col-6 col-md-3">
             <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#f0fdfa; border: 1px solid #99f6e4;">
-              <div class="text-caption text-teal-9 text-weight-bold">Saldo Akhir Kas</div>
+              <div class="text-caption text-teal-9 text-weight-bold">Saldo Akhir Periode</div>
               <div class="text-subtitle1 text-sm-h6 text-weight-bolder text-teal-9 mono-num">{{ formatRupiah(report.saldoAkhir) }}</div>
             </div>
           </div>
         </div>
+
+        <!-- Catatan Transparansi Dana Rapel Bulan Berikutnya -->
+        <q-banner
+          v-if="report.deferredFutureTotal > 0"
+          dense rounded
+          class="q-mb-md text-caption"
+          style="background:#f5f3ff; border: 1px solid #ddd6fe; color:#4c1d95;"
+        >
+          <template #avatar><q-icon name="event_repeat" color="deep-purple-7" size="22px" /></template>
+          <div>
+            <strong>Info IPL Rapel Bulan Berikutnya:</strong>
+            Terdapat pembayaran IPL di muka untuk periode setelah bulan ini sebesar
+            <strong class="mono-num">{{ formatRupiah(report.deferredFutureTotal) }}</strong>
+            ({{ formatFuturePeriods(report.deferredFuturePeriods) }}) yang otomatis dialokasikan ke laporan bulan masing-masing.
+            Total <strong>Saldo Kas Riil di Rekening</strong> saat ini:
+            <strong class="mono-num text-teal-9">{{ formatRupiah(report.saldoKasRiil) }}</strong>.
+          </div>
+        </q-banner>
 
         <!-- Buku Kas Umum (Kartu Rapi di HP/Tablet, Tabel Resmi di Laptop & Cetak) -->
         <div class="text-subtitle1 text-weight-bold text-grey-9 q-mb-sm">Buku Kas Umum (Mutasi &amp; Saldo Berjalan)</div>
@@ -6243,14 +6405,47 @@ window.CompFinanceReport = {
     </div>
   `,
   setup(props) {
-    const { ref, reactive, onMounted } = Vue;
+    const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
     const loading = ref(false);
     const exportingPdf = ref(false);
+    const currentYm = SiwargaAPI.currentPeriode();
+    const filterMode = ref('month');
+    const selectedPeriode = ref(currentYm);
+    const periodeOptions = SiwargaAPI.buildPeriodeOptions(false, 24, 18);
     const filters = reactive({ startDate: '', endDate: '' });
     const report = reactive({
+      periode: '',
       saldoAwalPeriode: 0, totalMasuk: 0, totalKeluar: 0, surplusDefisit: 0, saldoAkhir: 0,
-      ledger: [], perKategoriMasuk: {}, perKategoriKeluar: {}
+      saldoKasRiil: 0, deferredFutureTotal: 0, deferredFutureCount: 0, deferredFuturePeriods: [],
+      ledger: [], perKategoriMasuk: {}, perKategoriKeluar: {}, monthlyRecap: []
+    });
+
+    const MONTH_NAMES_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+    function formatMonthLong(ym) {
+      const s = String(ym || '').trim();
+      if (!/^\d{4}-\d{2}$/.test(s)) return s || '-';
+      const p = s.split('-');
+      const mIdx = parseInt(p[1], 10) - 1;
+      return (MONTH_NAMES_FULL[mIdx] || p[1]) + ' ' + p[0] + ' (' + p[1] + '-' + p[0] + ')';
+    }
+
+    function formatFuturePeriods(periods) {
+      if (!Array.isArray(periods) || !periods.length) return '-';
+      return SiwargaAPI.formatPeriodsSummary(periods, true);
+    }
+
+    const activePeriodLabel = computed(() => {
+      if (filterMode.value === 'month' && selectedPeriode.value) {
+        return 'Bulan ' + formatMonthLong(selectedPeriode.value);
+      }
+      if (filterMode.value === 'range' && (filters.startDate || filters.endDate)) {
+        return (filters.startDate ? SiwargaAPI.formatDateID(filters.startDate) : 'Awal Pembukuan') +
+          ' s/d ' +
+          (filters.endDate ? SiwargaAPI.formatDateID(filters.endDate) : 'Hari Ini');
+      }
+      return 'Semua Periode (Awal Pembukuan s/d Seluruh Transaksi)';
     });
 
     const ledgerColumns = [
@@ -6265,8 +6460,18 @@ window.CompFinanceReport = {
     async function loadReport() {
       loading.value = true;
       try {
-        const res = await SiwargaAPI.call('getBukuKasReport', Object.assign({}, filters));
-        Object.assign(report, res || {});
+        const reqPayload = filterMode.value === 'month'
+          ? { periode: selectedPeriode.value }
+          : (filterMode.value === 'range'
+            ? { startDate: filters.startDate, endDate: filters.endDate }
+            : {});
+        const res = await SiwargaAPI.call('getBukuKasReport', reqPayload);
+        Object.assign(report, {
+          periode: '',
+          saldoAwalPeriode: 0, totalMasuk: 0, totalKeluar: 0, surplusDefisit: 0, saldoAkhir: 0,
+          saldoKasRiil: 0, deferredFutureTotal: 0, deferredFutureCount: 0, deferredFuturePeriods: [],
+          ledger: [], perKategoriMasuk: {}, perKategoriKeluar: {}, monthlyRecap: []
+        }, res || {});
       } catch (err) {
         $q.notify({ type: 'negative', message: err.message });
       } finally {
@@ -6274,7 +6479,41 @@ window.CompFinanceReport = {
       }
     }
 
+    function onChangeFilterMode(mode) {
+      if (mode === 'month') {
+        if (!selectedPeriode.value) selectedPeriode.value = currentYm;
+        loadReport();
+      } else if (mode === 'all') {
+        filters.startDate = '';
+        filters.endDate = '';
+        loadReport();
+      }
+    }
+
+    function shiftMonth(delta) {
+      const base = selectedPeriode.value || currentYm;
+      const p = base.split('-');
+      const d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1 + delta, 1);
+      const nextYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      selectedPeriode.value = nextYm;
+      filterMode.value = 'month';
+      loadReport();
+    }
+
+    function goCurrentMonth() {
+      filterMode.value = 'month';
+      selectedPeriode.value = currentYm;
+      loadReport();
+    }
+
+    function selectRecapMonth(ym) {
+      filterMode.value = 'month';
+      selectedPeriode.value = ym;
+      loadReport();
+    }
+
     function resetFilters() {
+      filterMode.value = 'all';
       filters.startDate = '';
       filters.endDate = '';
       loadReport();
@@ -6329,10 +6568,7 @@ window.CompFinanceReport = {
         const namaRt = cfg.nama_rt || 'RT 009 / RW 004';
         const namaLingk = cfg.nama_lingkungan || 'Perumahan Griya Kedaung Asri';
         const kelKota = [cfg.kelurahan, cfg.kota].filter(Boolean).join(', ');
-        const periodeLabel =
-          (filters.startDate ? SiwargaAPI.formatDateID(filters.startDate) : 'Awal Pembukuan') +
-          ' s/d ' +
-          (filters.endDate ? SiwargaAPI.formatDateID(filters.endDate) : 'Hari Ini');
+        const periodeLabel = activePeriodLabel.value;
         const nowD = new Date();
         const todayStr =
           String(nowD.getDate()).padStart(2, '0') + '-' +
@@ -6378,8 +6614,24 @@ window.CompFinanceReport = {
           doc.text(b.val, bx + 3, boxY + 11.5);
         });
 
-        // Judul Tabel Buku Kas Umum
+        // Catatan Dana Rapel Bulan Berikutnya (jika ada)
         let curY = boxY + boxH + 7;
+        if (report.deferredFutureTotal > 0) {
+          doc.setFillColor(245, 243, 255);
+          doc.setDrawColor(221, 214, 254);
+          doc.roundedRect(margin, boxY + boxH + 3, contentW, 9.5, 1.5, 1.5, 'FD');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(76, 29, 149);
+          doc.text(
+            'Info IPL Rapel Bulan Berikutnya: ' + SiwargaAPI.formatRupiah(report.deferredFutureTotal) +
+            ' (' + formatFuturePeriods(report.deferredFuturePeriods) + ') dialokasikan ke bulan masing-masing · Saldo Kas Riil di Rekening: ' +
+            SiwargaAPI.formatRupiah(report.saldoKasRiil),
+            margin + 2.5,
+            boxY + boxH + 8.8
+          );
+          curY = boxY + boxH + 17;
+        }
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
         doc.setTextColor(30, 41, 59);
@@ -6501,9 +6753,11 @@ window.CompFinanceReport = {
           doc.text('Halaman ' + p + ' / ' + totalPages, pageW - margin, pageH - 8, { align: 'right' });
         }
 
-        const fileTag = filters.startDate && filters.endDate
-          ? (SiwargaAPI.formatDateID(filters.startDate) + '_sd_' + SiwargaAPI.formatDateID(filters.endDate))
-          : SiwargaAPI.formatPeriodeID(SiwargaAPI.currentPeriode());
+        const fileTag = filterMode.value === 'month' && selectedPeriode.value
+          ? SiwargaAPI.formatPeriodeID(selectedPeriode.value)
+          : (filters.startDate && filters.endDate
+            ? (SiwargaAPI.formatDateID(filters.startDate) + '_sd_' + SiwargaAPI.formatDateID(filters.endDate))
+            : 'Semua_Periode');
         doc.save('Laporan_Buku_Kas_SIWARGA_' + fileTag + '.pdf');
         $q.notify({ type: 'positive', message: 'Laporan PDF berhasil diunduh!' });
       } catch (err) {
@@ -6527,7 +6781,10 @@ window.CompFinanceReport = {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'Buku_Kas_SIWARGA_' + SiwargaAPI.formatPeriodeID(SiwargaAPI.currentPeriode()) + '.csv';
+      const csvTag = filterMode.value === 'month' && selectedPeriode.value
+        ? SiwargaAPI.formatPeriodeID(selectedPeriode.value)
+        : 'Semua_Periode';
+      a.download = 'Buku_Kas_SIWARGA_' + csvTag + '.csv';
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -6535,8 +6792,10 @@ window.CompFinanceReport = {
     onMounted(loadReport);
 
     return {
-      loading, exportingPdf, filters, report, ledgerColumns, loadReport, resetFilters, printReport, exportPdf, exportCsv,
-      formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID
+      loading, exportingPdf, currentYm, filterMode, selectedPeriode, periodeOptions, activePeriodLabel,
+      filters, report, ledgerColumns, loadReport, onChangeFilterMode, shiftMonth, goCurrentMonth, selectRecapMonth,
+      resetFilters, printReport, exportPdf, exportCsv, formatFuturePeriods,
+      formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
     };
   }
 };
