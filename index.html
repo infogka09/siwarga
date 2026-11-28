@@ -675,6 +675,15 @@
     return digits ? parseInt(digits, 10) : 0;
   }
 
+  function syncRibuanDom(evt, emptyIfZero) {
+    const el = evt && evt.target;
+    if (!el || typeof el.value !== 'string') return;
+    const formatted = formatRibuan(el.value, emptyIfZero);
+    if (el.value !== formatted) {
+      el.value = formatted;
+    }
+  }
+
   function formatDateID(dateStr) {
     if (!dateStr) return '-';
     const s = String(dateStr).trim().substring(0, 10);
@@ -2287,6 +2296,7 @@
     formatRupiah: formatRupiah,
     formatRibuan: formatRibuan,
     parseRibuan: parseRibuan,
+    syncRibuanDom: syncRibuanDom,
     formatDateID: formatDateID,
     formatDateTimeID: formatDateTimeID,
     formatPeriodeID: formatPeriodeID,
@@ -2941,6 +2951,7 @@ window.CompWarga = {
                   <q-input
                     :model-value="formatRibuan(kkForm.nominal_ipl, true)"
                     @update:model-value="v => kkForm.nominal_ipl = parseRibuan(v)"
+                    @input="e => syncRibuanDom(e, true)"
                     inputmode="numeric"
                     prefix="Rp"
                     placeholder="150.000"
@@ -3172,7 +3183,7 @@ window.CompWarga = {
       kkColumns, wargaColumns, filteredKk, filteredWarga, kkSelectOptions,
       detailDialog, selectedKk, selectedKkMembers, kkDialog, kkForm, wargaDialog, wargaForm,
       viewKkDetail, openKkDialog, submitKk, confirmDeleteKk, openWargaDialog, submitWarga, confirmDeleteWarga,
-      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan
+      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, syncRibuanDom: SiwargaAPI.syncRibuanDom
     };
   }
 };
@@ -4426,6 +4437,7 @@ window.CompFinanceIpl = {
               <q-input
                 :model-value="formatRibuan(genForm.nominal_default, true)"
                 @update:model-value="v => genForm.nominal_default = parseRibuan(v)"
+                @input="e => syncRibuanDom(e, true)"
                 inputmode="numeric"
                 prefix="Rp"
                 placeholder="150.000"
@@ -4586,6 +4598,7 @@ window.CompFinanceIpl = {
                 v-if="canManage"
                 :model-value="formatRibuan(rapelForm.nominal_per_bulan, true)"
                 @update:model-value="v => rapelForm.nominal_per_bulan = parseRibuan(v)"
+                @input="e => syncRibuanDom(e, true)"
                 inputmode="numeric"
                 prefix="Rp"
                 placeholder="150.000"
@@ -5543,7 +5556,7 @@ window.CompFinanceIpl = {
       openUploadDialog, onPickFile, submitUpload, openRapelDialog, filterKkSelect, filterRapelPeriodeSelect, addAllUnpaidToCustom, onSelectRapelKk, setRapelEndCurrent, setRapelEndYear, onPickRapelFile, submitRapel,
       openProofPreview, zoomProof, toggleProofZoom, rotateProof, resetProofView, copyRekening,
       buildWaMeLink, sendSingleWa, openWaBulkDialog, selectAllWa, submitWaBulk, openWaLogDialog,
-      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID, formatPeriodsSummary: SiwargaAPI.formatPeriodsSummary
+      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, syncRibuanDom: SiwargaAPI.syncRibuanDom, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID, formatPeriodsSummary: SiwargaAPI.formatPeriodsSummary
     };
   }
 };
@@ -6339,6 +6352,7 @@ window.CompFinanceKas = {
               <q-input
                 :model-value="formatRibuan(form.nominal, true)"
                 @update:model-value="v => form.nominal = parseRibuan(v)"
+                @input="e => syncRibuanDom(e, true)"
                 inputmode="numeric"
                 prefix="Rp"
                 placeholder="0"
@@ -6738,7 +6752,7 @@ window.CompFinanceKas = {
       buktiDialog, buktiItem, buktiZoom, buktiRotate,
       onTipeChange, openForm, submitForm, deleteTx, viewBukti, zoomBukti, toggleBuktiZoom, rotateBukti, resetBuktiView,
       openKatDialog, resetKatForm, editKategori, submitKategori, toggleKategori,
-      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, formatDateID: SiwargaAPI.formatDateID
+      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, syncRibuanDom: SiwargaAPI.syncRibuanDom, formatDateID: SiwargaAPI.formatDateID
     };
   }
 };
@@ -8096,6 +8110,7 @@ window.CompSettings = {
                 <q-input
                   :model-value="formatRibuan(form.nominal_ipl_default, false)"
                   @update:model-value="v => form.nominal_ipl_default = v === '' ? '' : String(parseRibuan(v))"
+                  @input="e => syncRibuanDom(e, false)"
                   inputmode="numeric"
                   prefix="Rp"
                   class="mono-num"
@@ -8108,6 +8123,7 @@ window.CompSettings = {
                 <q-input
                   :model-value="formatRibuan(form.saldo_awal_kas, false)"
                   @update:model-value="v => form.saldo_awal_kas = v === '' ? '' : String(parseRibuan(v))"
+                  @input="e => syncRibuanDom(e, false)"
                   inputmode="numeric"
                   prefix="Rp"
                   class="mono-num"
@@ -9250,7 +9266,7 @@ window.CompSettings = {
       searchUser, filterUserRole, filterUserLogin, loadingUsers, userLoginStats, filteredUsers,
       waProviderOptions, waVars, waAutoReminderBool,
       users, userColumns, userPagination, kkOptions, userDialog, userForm,
-      isLoginToday, formatLoginTime, formatDateTimeID: SiwargaAPI.formatDateTimeID, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, loadUsers,
+      isLoginToday, formatLoginTime, formatDateTimeID: SiwargaAPI.formatDateTimeID, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, syncRibuanDom: SiwargaAPI.syncRibuanDom, loadUsers,
       addBankAccount, removeBankAccount, resetMenuDefaults, saveMenuConfig,
       fillDefaultWargaPwd, confirmUpgradeWargaPasswords, canLoginAs, confirmLoginAs,
       onPickLogo, resetLogo, onChangeWaProvider, appendWaVar, runTestWa,
