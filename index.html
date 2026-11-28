@@ -430,16 +430,19 @@
 
   .report-summary-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
   }
 
-  @media (max-width: 1023px) {
+  @media (min-width: 1320px) {
+    .report-summary-grid {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 767px) {
     .report-summary-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .report-summary-grid .report-summary-final {
-      grid-column: span 2;
     }
   }
 
@@ -604,10 +607,7 @@
       flex: 0 0 50% !important;
     }
     .report-summary-grid {
-      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-    }
-    .report-summary-grid .report-summary-final {
-      grid-column: span 1 !important;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     }
   }
 </style>
@@ -1227,7 +1227,10 @@
       }
       if (isMasuk) {
         totalMasuk += nom;
-        if (String(tx.kategori || '').toLowerCase().indexOf('ipl') !== -1 || tx.periode_ipl) totalMasukIpl += nom;
+        const katLower = String(tx.kategori || '').trim().toLowerCase();
+        const isTunggakan = katLower.indexOf('tunggakan') !== -1;
+        const isIplBulanan = !isTunggakan && (katLower === 'ipl bulanan' || Boolean(tx.periode_ipl));
+        if (isIplBulanan) totalMasukIpl += nom;
         else totalMasukNonIpl += nom;
         perKategoriMasuk[tx.kategori] = (perKategoriMasuk[tx.kategori] || 0) + nom;
       } else {
@@ -7283,7 +7286,7 @@ window.CompFinanceReport = {
           <div style="width: 56px;" class="gt-xs"></div>
         </div>
 
-        <!-- Ringkasan Saldo 5 Kartu (Saldo Awal, Penerimaan IPL, Deposit IPL, Pengeluaran, Saldo Akhir) -->
+        <!-- Ringkasan Saldo 6 Kartu (Saldo Awal, Penerimaan IPL Bulan Berjalan, Pemasukan Lainnya, Deposit IPL, Pengeluaran, Saldo Akhir) -->
         <div class="report-summary-grid q-mb-md">
           <div class="q-pa-sm q-pa-sm-md rounded-borders bg-grey-1" style="border: 1px solid #e2e8f0;">
             <div class="text-caption text-grey-7">Saldo Awal</div>
@@ -7291,9 +7294,20 @@ window.CompFinanceReport = {
           </div>
           <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#ecfdf5; border: 1px solid #bbf7d0;">
             <div class="text-caption text-positive text-weight-medium">Penerimaan IPL Bulan Berjalan</div>
-            <div class="text-body1 text-sm-subtitle1 text-weight-bold text-positive mono-num q-mt-xs">+ {{ formatRupiah(report.totalMasuk) }}</div>
-            <div v-if="report.totalMasukNonIpl > 0" class="text-grey-7 q-mt-xs" style="font-size: 11px; line-height: 1.3;">
-              IPL: <strong class="mono-num">{{ formatRupiah(report.totalMasukIpl) }}</strong> · Lainnya: <strong class="mono-num">{{ formatRupiah(report.totalMasukNonIpl) }}</strong>
+            <div class="text-body1 text-sm-subtitle1 text-weight-bold text-positive mono-num q-mt-xs">
+              {{ report.totalMasukIpl > 0 ? ('+ ' + formatRupiah(report.totalMasukIpl)) : 'Rp 0' }}
+            </div>
+            <div class="text-grey-7 q-mt-xs" style="font-size: 11px; line-height: 1.3;">
+              Khusus IPL bulanan periode ini
+            </div>
+          </div>
+          <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#eff6ff; border: 1px solid #bfdbfe;">
+            <div class="text-caption text-blue-9 text-weight-medium">Pemasukan Lainnya</div>
+            <div class="text-body1 text-sm-subtitle1 text-weight-bold text-blue-9 mono-num q-mt-xs">
+              {{ report.totalMasukNonIpl > 0 ? ('+ ' + formatRupiah(report.totalMasukNonIpl)) : 'Rp 0' }}
+            </div>
+            <div v-if="nonIplCategoriesLabel" class="text-blue-8 q-mt-xs" style="font-size: 11px; line-height: 1.3;">
+              {{ nonIplCategoriesLabel }}
             </div>
           </div>
           <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#f5f3ff; border: 1px solid #ddd6fe;">
@@ -7307,7 +7321,9 @@ window.CompFinanceReport = {
           </div>
           <div class="q-pa-sm q-pa-sm-md rounded-borders" style="background:#fff7ed; border: 1px solid #fed7aa;">
             <div class="text-caption text-deep-orange-8 text-weight-medium">Pengeluaran Bulan Berjalan</div>
-            <div class="text-body1 text-sm-subtitle1 text-weight-bold text-deep-orange-8 mono-num q-mt-xs">- {{ formatRupiah(report.totalKeluar) }}</div>
+            <div class="text-body1 text-sm-subtitle1 text-weight-bold text-deep-orange-8 mono-num q-mt-xs">
+              {{ report.totalKeluar > 0 ? ('- ' + formatRupiah(report.totalKeluar)) : 'Rp 0' }}
+            </div>
           </div>
           <div class="q-pa-sm q-pa-sm-md rounded-borders report-summary-final" style="background:#f0fdfa; border: 1px solid #99f6e4;">
             <div class="text-caption text-teal-9 text-weight-bold">Saldo Akhir</div>
@@ -8050,6 +8066,15 @@ window.CompFinanceReport = {
       return SiwargaAPI.formatPeriodsSummary(periods, true);
     }
 
+    const nonIplCategoriesLabel = computed(() => {
+      const cats = Object.keys(report.perKategoriMasuk || {}).filter(k => {
+        const low = String(k || '').trim().toLowerCase();
+        return low !== 'ipl bulanan';
+      });
+      if (!cats.length) return '';
+      return cats.slice(0, 3).join(', ') + (cats.length > 3 ? (' +' + (cats.length - 3) + ' lainnya') : '');
+    });
+
     const activePeriodLabel = computed(() => {
       if (filterMode.value === 'month' && selectedPeriode.value) {
         return 'Bulan ' + formatMonthLong(selectedPeriode.value);
@@ -8202,56 +8227,63 @@ window.CompFinanceReport = {
         doc.setFontSize(8.5);
         doc.text('Periode: ' + periodeLabel + '   |   Diunduh: ' + todayStr + (usr.nama ? (' oleh ' + usr.nama) : ''), pageW / 2, 31, { align: 'center' });
 
-        // 5 Kartu Ringkasan Saldo
+        // 6 Kartu Ringkasan Saldo (2 Baris x 3 Kolom: Saldo Awal, IPL Bulan Berjalan, Pemasukan Lainnya / Deposit IPL, Pengeluaran, Saldo Akhir)
         const boxY = 38;
-        const gap = 2.5;
-        const boxW = (contentW - gap * 4) / 5;
-        const boxH = 16.5;
+        const gapX = 3;
+        const gapY = 2.5;
+        const boxW = (contentW - gapX * 2) / 3;
+        const boxH = 15;
         const boxes = [
           { label: 'Saldo Awal', val: SiwargaAPI.formatRupiah(report.saldoAwalPeriode), sub: '', bg: [241, 245, 249], txt: [30, 41, 59] },
-          { label: 'Penerimaan IPL Bln Ini', val: '+ ' + SiwargaAPI.formatRupiah(report.totalMasuk), sub: report.totalMasukNonIpl > 0 ? ('IPL ' + SiwargaAPI.formatRupiah(report.totalMasukIpl)) : '', bg: [236, 253, 245], txt: [21, 128, 61] },
-          { label: 'Deposit IPL', val: report.deferredFutureTotal > 0 ? ('+ ' + SiwargaAPI.formatRupiah(report.deferredFutureTotal)) : 'Rp 0', sub: report.deferredFutureTotal > 0 ? formatFuturePeriods(report.deferredFuturePeriods) : '', bg: [245, 243, 255], txt: [109, 40, 217] },
-          { label: 'Pengeluaran Bln Ini', val: '- ' + SiwargaAPI.formatRupiah(report.totalKeluar), sub: '', bg: [255, 247, 237], txt: [194, 65, 12] },
-          { label: 'Saldo Akhir', val: SiwargaAPI.formatRupiah(report.saldoAkhir), sub: report.deferredFutureTotal > 0 ? ('Riil ' + SiwargaAPI.formatRupiah(report.saldoKasPerPeriode || report.saldoKasRiil)) : '', bg: [240, 253, 250], txt: [15, 118, 110] }
+          { label: 'Penerimaan IPL Bulan Berjalan', val: report.totalMasukIpl > 0 ? ('+ ' + SiwargaAPI.formatRupiah(report.totalMasukIpl)) : 'Rp 0', sub: 'Khusus IPL bulanan periode ini', bg: [236, 253, 245], txt: [21, 128, 61] },
+          { label: 'Pemasukan Lainnya', val: report.totalMasukNonIpl > 0 ? ('+ ' + SiwargaAPI.formatRupiah(report.totalMasukNonIpl)) : 'Rp 0', sub: nonIplCategoriesLabel.value || '', bg: [239, 246, 255], txt: [30, 64, 175] },
+          { label: 'Deposit IPL', val: report.deferredFutureTotal > 0 ? ('+ ' + SiwargaAPI.formatRupiah(report.deferredFutureTotal)) : 'Rp 0', sub: report.deferredFutureTotal > 0 ? ('Periode ' + formatFuturePeriods(report.deferredFuturePeriods)) : '', bg: [245, 243, 255], txt: [109, 40, 217] },
+          { label: 'Pengeluaran Bulan Berjalan', val: report.totalKeluar > 0 ? ('- ' + SiwargaAPI.formatRupiah(report.totalKeluar)) : 'Rp 0', sub: '', bg: [255, 247, 237], txt: [194, 65, 12] },
+          { label: 'Saldo Akhir', val: SiwargaAPI.formatRupiah(report.saldoAkhir), sub: report.deferredFutureTotal > 0 ? ('Kas Riil (+Deposit): ' + SiwargaAPI.formatRupiah(report.saldoKasPerPeriode || report.saldoKasRiil)) : '', bg: [240, 253, 250], txt: [15, 118, 110] }
         ];
         boxes.forEach((b, i) => {
-          const bx = margin + i * (boxW + gap);
+          const col = i % 3;
+          const row = Math.floor(i / 3);
+          const bx = margin + col * (boxW + gapX);
+          const by = boxY + row * (boxH + gapY);
           doc.setFillColor(b.bg[0], b.bg[1], b.bg[2]);
           doc.setDrawColor(203, 213, 225);
-          doc.roundedRect(bx, boxY, boxW, boxH, 2, 2, 'FD');
+          doc.roundedRect(bx, by, boxW, boxH, 2, 2, 'FD');
           doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6.6);
+          doc.setFontSize(7.2);
           doc.setTextColor(100, 116, 139);
-          doc.text(b.label, bx + 2.2, boxY + 4.8);
+          doc.text(b.label, bx + 2.8, by + 4.4);
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
+          doc.setFontSize(9.5);
           doc.setTextColor(b.txt[0], b.txt[1], b.txt[2]);
-          doc.text(b.val, bx + 2.2, boxY + 10.6);
+          doc.text(b.val, bx + 2.8, by + 9.8);
           if (b.sub) {
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(6);
+            doc.setFontSize(6.3);
             doc.setTextColor(100, 116, 139);
-            doc.text(b.sub, bx + 2.2, boxY + 14.6);
+            const clippedSub = b.sub.length > 42 ? (b.sub.substring(0, 40) + '...') : b.sub;
+            doc.text(clippedSub, bx + 2.8, by + 13.4);
           }
         });
 
         // Catatan Dana Rapel Bulan Berikutnya (jika ada)
-        let curY = boxY + boxH + 7;
+        const boxesBottomY = boxY + boxH * 2 + gapY;
+        let curY = boxesBottomY + 6.5;
         if (report.deferredFutureTotal > 0) {
           doc.setFillColor(245, 243, 255);
           doc.setDrawColor(221, 214, 254);
-          doc.roundedRect(margin, boxY + boxH + 3, contentW, 9.5, 1.5, 1.5, 'FD');
+          doc.roundedRect(margin, boxesBottomY + 2.5, contentW, 9.5, 1.5, 1.5, 'FD');
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(7.5);
           doc.setTextColor(76, 29, 149);
           doc.text(
             'Info Deposit IPL sebesar ' + SiwargaAPI.formatRupiah(report.deferredFutureTotal) +
             ' (' + formatFuturePeriods(report.deferredFuturePeriods) + ') yang otomatis dialokasikan pada bulan masing-masing. Total Saldo Kas Riil di Rekening sebesar: ' +
-            SiwargaAPI.formatRupiah(report.saldoKasRiil) + '.',
+            SiwargaAPI.formatRupiah(report.saldoKasPerPeriode || report.saldoKasRiil) + '.',
             margin + 2.5,
-            boxY + boxH + 8.8
+            boxesBottomY + 8.3
           );
-          curY = boxY + boxH + 17;
+          curY = boxesBottomY + 16.5;
         }
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
@@ -8581,7 +8613,7 @@ window.CompFinanceReport = {
       openSigDialog, sigSlotPreview, triggerSigFile, onPickSigFile, markRemoveSig, saveSignatures,
       currentYm, filterMode, selectedPeriode, periodeOptions, activePeriodLabel,
       filters, report, ledgerColumns, loadReport, onChangeFilterMode, shiftMonth, goCurrentMonth, selectRecapMonth,
-      resetFilters, printReport, exportPdf, exportCsv, formatFuturePeriods,
+      resetFilters, printReport, exportPdf, exportCsv, formatFuturePeriods, nonIplCategoriesLabel,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
     };
   }
