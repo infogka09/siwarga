@@ -2216,6 +2216,13 @@
         saveMockDb(db);
         return { total: targets.length, sent: sent, failed: 0, skippedNoPhone: skippedNoPhone, details: details, message: 'Selesai (Simulasi): ' + sent + ' terkirim, 0 gagal, ' + skippedNoPhone + ' tanpa nomor HP.' };
       }
+      case 'testPushNotification': {
+        needAuth(['admin']);
+        if (!(payload && payload.onesignal_app_id && payload.onesignal_rest_api_key)) {
+          throw new Error('Isi OneSignal App ID dan REST API Key terlebih dahulu.');
+        }
+        return { sent: true, id: 'MOCK_PUSH_1', recipients: 1, message: 'Simulasi Preview Lokal: Tes Push Notification OK!' };
+      }
       case 'saveReportSignatures': {
         const u = needAuth();
         const cfgMenu = parseMenuConfig(db.settings);
@@ -8102,6 +8109,7 @@ window.CompSettings = {
         <q-tabs v-model="tab" dense align="left" active-color="teal-8" indicator-color="teal-8" class="text-grey-7 q-px-md q-pt-sm">
           <q-tab v-if="isSuperadmin" name="menus" icon="widgets" label="Kontrol Menu (Superadmin)" />
           <q-tab name="profile" icon="home_work" label="Identitas RT & Keuangan" />
+          <q-tab name="push" icon="notifications_active" label="Push Notif HP" />
           <q-tab name="whatsapp" icon="chat" label="WhatsApp API" />
           <q-tab name="users" icon="manage_accounts" :label="'Akun Pengguna (' + users.length + ')'" />
         </q-tabs>
@@ -8359,6 +8367,79 @@ window.CompSettings = {
                 <q-btn type="submit" unelevated color="teal-8" icon="save" label="Simpan Pengaturan" :loading="saving" />
               </div>
             </q-form>
+          </q-tab-panel>
+
+          <!-- TAB PUSH NOTIFICATION HP (ONESIGNAL) -->
+          <q-tab-panel name="push" class="q-pa-md">
+            <q-banner rounded class="bg-teal-1 text-teal-10 q-mb-md" style="border: 1px solid #99f6e4;">
+              <template #avatar><q-icon name="notifications_active" color="teal-8" /></template>
+              <div class="text-weight-bold">Notifikasi Push HP (OneSignal Web Push — Gratis)</div>
+              <div class="text-caption">
+                Kirim notifikasi banner otomatis ke HP warga yang sudah install SIWARGA GKA walaupun aplikasi sedang ditutup total, saat ada <strong>Pengumuman Baru</strong>, <strong>Agenda Kegiatan Baru</strong>, <strong>Pengaduan Warga</strong> (ke Pengurus), dan <strong>Tanggapan Pengurus</strong> (ke Warga pelapor).
+              </div>
+            </q-banner>
+
+            <q-form @submit.prevent="saveProfile" class="row q-col-gutter-md">
+              <div class="col-12">
+                <q-toggle
+                  v-model="pushNotifEnabledBool"
+                  color="teal-8"
+                  label="Aktifkan Push Notification HP (OneSignal)"
+                />
+              </div>
+              <div class="col-12 col-sm-6">
+                <q-input
+                  v-model="form.onesignal_app_id"
+                  outlined dense
+                  label="OneSignal App ID"
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  hint="Salin dari OneSignal → Settings → Keys & IDs → OneSignal App ID"
+                />
+              </div>
+              <div class="col-12 col-sm-6">
+                <q-input
+                  v-model="form.onesignal_rest_api_key"
+                  :type="showPushKey ? 'text' : 'password'"
+                  outlined dense
+                  label="OneSignal REST API Key (Rahasia Server)"
+                  placeholder="os_v2_app_..."
+                  hint="Disimpan aman di Google Apps Script (tidak pernah dikirim ke browser warga)"
+                >
+                  <template #append>
+                    <q-icon :name="showPushKey ? 'visibility_off' : 'visibility'" class="cursor-pointer" @click="showPushKey = !showPushKey" />
+                  </template>
+                </q-input>
+              </div>
+              <div class="col-12 row justify-end">
+                <q-btn type="submit" unelevated color="teal-8" icon="save" label="Simpan Konfigurasi Push" :loading="saving" />
+              </div>
+            </q-form>
+
+            <q-separator class="q-my-md" />
+
+            <div class="text-subtitle2 text-weight-bold text-grey-9 q-mb-xs">Uji Coba Kirim Push Notification ke HP</div>
+            <div class="text-caption text-grey-6 q-mb-sm">
+              Setelah menyimpan App ID &amp; API Key dan menekan ikon lonceng <strong>Aktifkan Notifikasi</strong> di HP, uji pengiriman di sini:
+            </div>
+            <div class="row q-col-gutter-sm items-center">
+              <div class="col-12 col-sm-4">
+                <q-input v-model="testPushTitle" outlined dense label="Judul Notifikasi Tes" placeholder="Tes SIWARGA GKA" />
+              </div>
+              <div class="col-12 col-sm-5">
+                <q-input v-model="testPushMessage" outlined dense label="Isi Pesan Tes" placeholder="Notifikasi Push HP RT 009 berhasil aktif!" />
+              </div>
+              <div class="col-12 col-sm-3">
+                <q-btn unelevated color="deep-purple-7" icon="notifications_active" label="Kirim Tes Push" :loading="testingPush" @click="runTestPush" />
+              </div>
+            </div>
+
+            <div class="q-mt-md q-pa-md bg-grey-1 rounded-borders text-caption text-grey-8" style="border: 1px solid #e2e8f0; line-height: 1.6;">
+              <div class="text-weight-bold text-teal-9 q-mb-xs">Panduan Setup Singkat OneSignal (Gratis, ±5 Menit):</div>
+              <div>1. Daftar akun gratis di <strong>https://onesignal.com</strong> → klik <strong>New App/Website</strong> → pilih platform <strong>Web</strong>.</div>
+              <div>2. Pilih <strong>Typical Site</strong> → isi Site Name: <code>SIWARGA GKA</code>, Site URL: <code>https://infogka09.github.io/siwarga</code>, Default Icon URL: <code>https://infogka09.github.io/siwarga/icon-gka.png</code>.</div>
+              <div>3. Di bagian <em>Advanced Push Settings</em> (opsional), aktifkan <strong>Customize service worker</strong> dengan Path: <code>/siwarga/OneSignalSDKWorker.js</code> dan Registration Scope: <code>/siwarga/</code> (file <code>OneSignalSDKWorker.js</code> sudah otomatis disediakan di folder <code>public/</code>).</div>
+              <div>4. Buka menu <strong>Settings → Keys &amp; IDs</strong> di OneSignal → salin <strong>App ID</strong> dan <strong>App API Key (REST API Key)</strong> ke form di atas, nyalakan toggle, lalu klik <strong>Simpan Konfigurasi Push</strong>.</div>
+            </div>
           </q-tab-panel>
 
           <q-tab-panel name="whatsapp" class="q-pa-md">
@@ -9028,6 +9109,10 @@ window.CompSettings = {
     const showWaToken = ref(false);
     const testWaPhone = ref('');
     const testingWa = ref(false);
+    const showPushKey = ref(false);
+    const testPushTitle = ref('Tes Notifikasi SIWARGA GKA');
+    const testPushMessage = ref('Push notification HP untuk Pengumuman & Kegiatan RT 009 sudah aktif!');
+    const testingPush = ref(false);
     const upgradingPwds = ref(false);
     const impersonatingId = ref('');
     const searchUser = ref('');
@@ -9047,6 +9132,10 @@ window.CompSettings = {
     const waAutoReminderBool = computed({
       get: () => String(form.wa_auto_reminder) === 'true',
       set: (v) => { form.wa_auto_reminder = v ? 'true' : 'false'; }
+    });
+    const pushNotifEnabledBool = computed({
+      get: () => String(form.push_notif_enabled) === 'true',
+      set: (v) => { form.push_notif_enabled = v ? 'true' : 'false'; }
     });
     const kkList = ref([]);
     const userDialog = ref(false);
@@ -9205,6 +9294,23 @@ window.CompSettings = {
         $q.notify({ type: 'negative', message: err.message });
       } finally {
         testingWa.value = false;
+      }
+    }
+
+    async function runTestPush() {
+      testingPush.value = true;
+      try {
+        const res = await SiwargaAPI.call('testPushNotification', {
+          onesignal_app_id: form.onesignal_app_id,
+          onesignal_rest_api_key: form.onesignal_rest_api_key,
+          title: testPushTitle.value,
+          message: testPushMessage.value
+        });
+        $q.notify({ type: 'positive', message: (res && res.message) || 'Tes Push Notification berhasil dikirim!' });
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message });
+      } finally {
+        testingPush.value = false;
       }
     }
 
@@ -9438,14 +9544,14 @@ window.CompSettings = {
       isCustomRoleAllowed, toggleCustomRoleMenu, isReportTtdRoleAllowed, toggleReportTtdRole, openRoleManager, resetRoleDraft,
       startEditRole, addOrUpdateRoleDraft, removeCustomRole, restoreDefaultCustomRoles, saveCustomRoles,
       tab, saving, savingMenus, form, bankAccounts, menuState, menuGroups,
-      logoFile, logoPreview, showWaToken, testWaPhone, testingWa, upgradingPwds, impersonatingId,
+      logoFile, logoPreview, showWaToken, testWaPhone, testingWa, showPushKey, testPushTitle, testPushMessage, testingPush, upgradingPwds, impersonatingId,
       searchUser, filterUserRole, filterUserLogin, loadingUsers, userLoginStats, filteredUsers,
-      waProviderOptions, waVars, waAutoReminderBool,
+      waProviderOptions, waVars, waAutoReminderBool, pushNotifEnabledBool,
       users, userColumns, userPagination, kkOptions, userDialog, userForm,
       isLoginToday, formatLoginTime, formatDateTimeID: SiwargaAPI.formatDateTimeID, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, syncRibuanDom: SiwargaAPI.syncRibuanDom, loadUsers,
       addBankAccount, removeBankAccount, resetMenuDefaults, saveMenuConfig,
       fillDefaultWargaPwd, confirmUpgradeWargaPasswords, canLoginAs, confirmLoginAs,
-      onPickLogo, resetLogo, onChangeWaProvider, appendWaVar, runTestWa,
+      onPickLogo, resetLogo, onChangeWaProvider, appendWaVar, runTestWa, runTestPush,
       onSelectKk, saveProfile, runSetup, openUserDialog, submitUser, deleteUser
     };
   }
@@ -10541,6 +10647,20 @@ window.CompProfile = {
           </q-chip>
 
           <q-btn
+            v-if="pushConfigured"
+            flat
+            round
+            dense
+            :icon="pushSubscribed ? 'notifications_active' : 'notifications_none'"
+            :color="pushSubscribed ? 'teal-8' : 'amber-9'"
+            :loading="pushBusy"
+            @click="togglePushSubscription"
+          >
+            <q-badge v-if="!pushSubscribed" color="red" rounded floating />
+            <q-tooltip>{{ pushSubscribed ? 'Notifikasi HP aktif (klik untuk pengaturan)' : 'Aktifkan Notifikasi HP untuk Pengumuman & Kegiatan RT' }}</q-tooltip>
+          </q-btn>
+
+          <q-btn
             v-if="pendingVerifCount > 0 && canManageFinance && isMenuVisible('finance_verif')"
             flat
             round
@@ -10739,6 +10859,23 @@ window.CompProfile = {
               </template>
             </q-banner>
 
+            <!-- Banner Ajakan Aktifkan Notifikasi HP (OneSignal Web Push) -->
+            <q-banner
+              v-if="pushConfigured && !pushSubscribed && !pushBannerDismissed"
+              rounded
+              dense
+              class="bg-teal-1 text-teal-10 q-mb-md no-print"
+              style="border: 1px solid #99f6e4;"
+            >
+              <template #avatar><q-icon name="notifications_active" color="teal-8" size="24px" /></template>
+              <div class="text-body2 text-weight-bold">Aktifkan Notifikasi HP SIWARGA GKA</div>
+              <div class="text-caption">Terima pemberitahuan langsung di HP saat ada <strong>Pengumuman RT</strong> atau <strong>Agenda Kegiatan</strong> baru walaupun aplikasi sedang ditutup.</div>
+              <template #action>
+                <q-btn flat dense no-caps size="sm" color="grey-7" label="Nanti" @click="dismissPushBanner" />
+                <q-btn unelevated dense no-caps size="sm" color="teal-8" icon="notifications" label="Aktifkan" :loading="pushBusy" @click="togglePushSubscription" />
+              </template>
+            </q-banner>
+
             <!-- Pengingat Keamanan: Password Bawaan Belum Diganti -->
             <q-banner
               v-if="currentUser && currentUser.must_change_password && activePage !== 'profile'"
@@ -10909,6 +11046,8 @@ window.CompProfile = {
           bank_accounts_json: '',
           menu_config_json: '',
           custom_roles_json: '',
+          push_notif_enabled: 'false',
+          onesignal_app_id: '',
           kontak_darurat: '',
           qris_info: ''
         });
@@ -11061,6 +11200,159 @@ window.CompProfile = {
           headerAvatarError.value = false;
         });
 
+        // OneSignal Web Push Notification (Background Push HP Android & iOS PWA)
+        const pushSubscribed = ref(false);
+        const pushBusy = ref(false);
+        const pushBannerDismissed = ref(false);
+        let oneSignalInitializedAppId = '';
+        let oneSignalScriptPromise = null;
+        try {
+          pushBannerDismissed.value = localStorage.getItem('siwarga_push_banner_dismissed') === '1';
+        } catch (e) {}
+
+        const pushConfigured = computed(() =>
+          !SiwargaAPI.isMockMode &&
+          typeof window !== 'undefined' &&
+          typeof Notification !== 'undefined' &&
+          'serviceWorker' in navigator &&
+          String(settings.push_notif_enabled) === 'true' &&
+          Boolean(String(settings.onesignal_app_id || '').trim())
+        );
+
+        function loadOneSignalSdk() {
+          if (oneSignalScriptPromise) return oneSignalScriptPromise;
+          oneSignalScriptPromise = new Promise((resolve, reject) => {
+            window.OneSignalDeferred = window.OneSignalDeferred || [];
+            if (window.OneSignal && window.OneSignal.User) return resolve(window.OneSignal);
+            const s = document.createElement('script');
+            s.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+            s.defer = true;
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('Gagal memuat SDK Notifikasi OneSignal.'));
+            document.head.appendChild(s);
+          });
+          return oneSignalScriptPromise;
+        }
+
+        function syncPushUserTags() {
+          const usr = currentUser.value;
+          if (!usr || !window.OneSignalDeferred) return;
+          window.OneSignalDeferred.push(async function (OneSignal) {
+            try {
+              const effRole = SiwargaAPI.getEffectiveRole(usr, settings);
+              await OneSignal.User.addTags({
+                role: String(usr.role || 'warga'),
+                base_role: String(effRole || 'warga'),
+                no_rumah: String(usr.no_rumah || '')
+              });
+            } catch (e) {}
+          });
+        }
+
+        async function initOneSignalIfReady() {
+          const appId = String(settings.onesignal_app_id || '').trim();
+          if (!pushConfigured.value || !appId) return;
+          if (oneSignalInitializedAppId === appId) {
+            syncPushUserTags();
+            return;
+          }
+          try {
+            await loadOneSignalSdk();
+            const basePath = (window.location.pathname || '/').replace(/\/[^/]*$/, '/') || '/';
+            window.OneSignalDeferred = window.OneSignalDeferred || [];
+            window.OneSignalDeferred.push(async function (OneSignal) {
+              try {
+                if (oneSignalInitializedAppId !== appId) {
+                  await OneSignal.init({
+                    appId: appId,
+                    serviceWorkerPath: 'OneSignalSDKWorker.js',
+                    serviceWorkerParam: { scope: basePath },
+                    notifyButton: { enable: false },
+                    allowLocalhostAsSecureOrigin: true
+                  });
+                  oneSignalInitializedAppId = appId;
+                }
+                const opted = Boolean(OneSignal.User && OneSignal.User.PushSubscription && OneSignal.User.PushSubscription.optedIn);
+                pushSubscribed.value = opted && Notification.permission === 'granted';
+                if (OneSignal.User && OneSignal.User.PushSubscription && OneSignal.User.PushSubscription.addEventListener) {
+                  OneSignal.User.PushSubscription.addEventListener('change', function (ev) {
+                    pushSubscribed.value = Boolean(ev && ev.current && ev.current.optedIn) && Notification.permission === 'granted';
+                  });
+                }
+                if (currentUser.value) syncPushUserTags();
+              } catch (e) {
+                console.warn('OneSignal init warning:', e);
+              }
+            });
+          } catch (err) {
+            console.warn('OneSignal load warning:', err);
+          }
+        }
+
+        function dismissPushBanner() {
+          pushBannerDismissed.value = true;
+          try { localStorage.setItem('siwarga_push_banner_dismissed', '1'); } catch (e) {}
+        }
+
+        async function togglePushSubscription() {
+          if (!pushConfigured.value) return;
+          if (Notification.permission === 'denied') {
+            $q.notify({
+              type: 'warning',
+              message: 'Izin notifikasi sedang diblokir browser. Buka Pengaturan Situs di browser HP Anda lalu izinkan Notifikasi.'
+            });
+            return;
+          }
+          pushBusy.value = true;
+          try {
+            await initOneSignalIfReady();
+            await new Promise((resolve, reject) => {
+              window.OneSignalDeferred.push(async function (OneSignal) {
+                try {
+                  if (pushSubscribed.value) {
+                    await OneSignal.User.PushSubscription.optOut();
+                    pushSubscribed.value = false;
+                    $q.notify({ type: 'info', message: 'Notifikasi HP untuk perangkat ini dinonaktifkan.' });
+                  } else {
+                    await OneSignal.Notifications.requestPermission();
+                    if (Notification.permission === 'granted') {
+                      await OneSignal.User.PushSubscription.optIn();
+                      pushSubscribed.value = true;
+                      syncPushUserTags();
+                      $q.notify({ type: 'positive', message: 'Notifikasi HP aktif! Anda akan menerima pemberitahuan Pengumuman & Kegiatan RT terbaru.' });
+                    } else {
+                      $q.notify({ type: 'warning', message: 'Izin notifikasi belum disetujui.' });
+                    }
+                  }
+                  resolve();
+                } catch (e) {
+                  reject(e);
+                }
+              });
+            });
+          } catch (err) {
+            $q.notify({ type: 'negative', message: (err && err.message) || 'Gagal mengatur notifikasi HP.' });
+          } finally {
+            pushBusy.value = false;
+          }
+        }
+
+        function applyDeepLinkPage() {
+          try {
+            const params = new URLSearchParams(window.location.search || '');
+            const target = String(params.get('page') || '').trim();
+            if (target && MENU_TITLES[target] && (target === 'dashboard' || target === 'profile' || isMenuVisible(target))) {
+              activePage.value = target;
+            }
+          } catch (e) {}
+        }
+
+        watch(() => [settings.push_notif_enabled, settings.onesignal_app_id, currentUser.value && currentUser.value.id], () => {
+          if (pushConfigured.value && currentUser.value) {
+            initOneSignalIfReady();
+          }
+        });
+
         async function refreshPublicConfig() {
           try {
             const cfg = await SiwargaAPI.call('getPublicConfig');
@@ -11114,7 +11406,9 @@ window.CompProfile = {
               const sess = await SiwargaAPI.call('checkSession');
               if (sess && sess.user) {
                 currentUser.value = sess.user;
+                applyDeepLinkPage();
                 refreshBadgeCounts();
+                initOneSignalIfReady();
               } else {
                 SiwargaAPI.setToken('');
               }
@@ -11158,8 +11452,10 @@ window.CompProfile = {
             await refreshPublicConfig();
             currentUser.value = res.user;
             activePage.value = 'dashboard';
+            applyDeepLinkPage();
             $q.notify({ type: 'positive', message: 'Selamat datang, ' + res.user.nama });
             refreshBadgeCounts();
+            initOneSignalIfReady();
           } catch (err) {
             $q.notify({ type: 'negative', message: err.message });
           } finally {
@@ -11217,6 +11513,12 @@ window.CompProfile = {
           groupLabel,
           userInitials,
           headerAvatarError,
+          pushConfigured,
+          pushSubscribed,
+          pushBusy,
+          pushBannerDismissed,
+          togglePushSubscription,
+          dismissPushBanner,
           showPassword,
           loginLoading,
           stoppingImpersonate,
