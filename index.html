@@ -6173,7 +6173,7 @@ window.CompFinanceVerif = {
 
   <script>
 window.CompFinanceKas = {
-  props: ['user'],
+  props: ['user', 'settings'],
   template: `
     <div>
       <div class="row items-center justify-between q-mb-md q-col-gutter-sm">
@@ -6346,7 +6346,44 @@ window.CompFinanceKas = {
                   </q-select>
                 </div>
                 <div class="col-12 col-sm-5">
-                  <q-select v-model="form.metode" :options="['Tunai', 'Transfer Bank', 'QRIS']" outlined dense label="Metode" />
+                  <q-select
+                    v-model="form.metode"
+                    :options="['Tunai', 'Transfer Bank', 'QRIS']"
+                    outlined dense
+                    label="Metode"
+                    @update:model-value="onMetodeChange"
+                  />
+                </div>
+              </div>
+
+              <!-- Rekening Kas RT (Otomatis muncul saat Metode = Transfer Bank) -->
+              <div v-if="form.metode === 'Transfer Bank'" class="q-pa-sm rounded-borders" style="background: #f0fdfa; border: 1px solid #99f6e4;">
+                <template v-if="bankSelectOptions.length">
+                  <q-select
+                    v-model="form.rekening_tujuan"
+                    :options="bankSelectOptions"
+                    option-value="value"
+                    option-label="label"
+                    emit-value map-options
+                    outlined dense
+                    bg-color="white"
+                    :label="form.tipe === 'Masuk' ? 'Rekening Tujuan Transfer (Kas RT) *' : 'Rekening Sumber Transfer (Kas RT) *'"
+                  >
+                    <template #prepend><q-icon name="account_balance" color="teal-8" /></template>
+                  </q-select>
+                  <div v-if="selectedBankAccount" class="row items-center justify-between no-wrap q-mt-xs q-px-xs">
+                    <div class="text-caption text-teal-10 ellipsis">
+                      <strong>{{ selectedBankAccount.bank }}</strong> ·
+                      <span class="mono-num text-weight-bold">{{ selectedBankAccount.norek }}</span>
+                      <span v-if="selectedBankAccount.atas_nama"> (a.n. {{ selectedBankAccount.atas_nama }})</span>
+                    </div>
+                    <q-btn flat dense round size="sm" color="teal-9" icon="content_copy" @click="copyBankNorek(selectedBankAccount)">
+                      <q-tooltip>Salin nomor rekening</q-tooltip>
+                    </q-btn>
+                  </div>
+                </template>
+                <div v-else class="text-caption text-amber-10">
+                  <q-icon name="info" size="15px" class="q-mr-xs" />Belum ada nomor rekening aktif di menu Pengaturan RT.
                 </div>
               </div>
               <q-input
@@ -6624,6 +6661,40 @@ window.CompFinanceKas = {
       }
     }
 
+    const activeBankAccounts = computed(() =>
+      SiwargaAPI.parseBankAccounts(props.settings || {}).filter(a => a.aktif !== false && (a.bank || a.norek))
+    );
+
+    const bankSelectOptions = computed(() =>
+      activeBankAccounts.value.map(a => {
+        const val = a.bank + ' · ' + a.norek + (a.atas_nama ? (' (a.n. ' + a.atas_nama + ')') : '');
+        return {
+          value: val,
+          label: a.bank + ' — ' + a.norek + (a.atas_nama ? (' (a.n. ' + a.atas_nama + ')') : ''),
+          raw: a
+        };
+      })
+    );
+
+    const selectedBankAccount = computed(() => {
+      const found = bankSelectOptions.value.find(o => o.value === form.rekening_tujuan);
+      return found ? found.raw : null;
+    });
+
+    function onMetodeChange(newMetode) {
+      if (newMetode === 'Transfer Bank' && !form.rekening_tujuan && bankSelectOptions.value.length) {
+        form.rekening_tujuan = bankSelectOptions.value[0].value;
+      }
+    }
+
+    function copyBankNorek(acc) {
+      if (!acc || !acc.norek) return;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(acc.norek);
+        $q.notify({ type: 'positive', message: 'Nomor rekening ' + acc.bank + ' disalin: ' + acc.norek });
+      }
+    }
+
     function onTipeChange(newTipe) {
       const opts = newTipe === 'Masuk' ? kategoriMasuk.value : kategoriKeluar.value;
       if (opts.indexOf(form.kategori) === -1) {
@@ -6633,17 +6704,33 @@ window.CompFinanceKas = {
 
     function openForm(tipe, row) {
       uploadFile.value = null;
+      const defaultRek = bankSelectOptions.value.length ? bankSelectOptions.value[0].value : '';
       if (row) {
-        Object.assign(form, row);
+        const cloned = Object.assign({}, row);
+        let parsedRek = '';
+        const descStr = String(cloned.deskripsi || '');
+        const matchRek = descStr.match(/\s*\[([^\]]+)\]\s*$/);
+        if (matchRek) {
+          const candidate = matchRek[1].trim();
+          const existsInOpts = bankSelectOptions.value.some(o => o.value === candidate);
+          if (existsInOpts) {
+            parsedRek = candidate;
+            cloned.deskripsi = descStr.replace(/\s*\[[^\]]+\]\s*$/, '').trim();
+          }
+        }
+        cloned.rekening_tujuan = parsedRek || (cloned.metode === 'Transfer Bank' ? defaultRek : '');
+        Object.assign(form, cloned);
       } else {
+        const now = new Date();
+        const localToday = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
         const opts = tipe === 'Masuk' ? kategoriMasuk.value : kategoriKeluar.value;
         const defaultKat = tipe === 'Masuk'
           ? (opts.find(n => n !== 'IPL Bulanan') || opts[0] || '')
           : (opts[0] || '');
         Object.assign(form, {
-          id: '', tanggal: new Date().toISOString().substring(0, 10), tipe: tipe,
+          id: '', tanggal: localToday, tipe: tipe,
           kategori: defaultKat,
-          deskripsi: '', nominal: 0, metode: 'Tunai', bukti_url: '', bukti_id: ''
+          deskripsi: '', nominal: 0, metode: 'Tunai', rekening_tujuan: defaultRek, bukti_url: '', bukti_id: ''
         });
       }
       dialog.value = true;
@@ -6691,6 +6778,15 @@ window.CompFinanceKas = {
       saving.value = true;
       try {
         const payload = Object.assign({}, form);
+        let desc = String(payload.deskripsi || '').trim();
+        if (payload.metode === 'Transfer Bank' && payload.rekening_tujuan) {
+          const rekTag = '[' + payload.rekening_tujuan + ']';
+          if (desc.indexOf(rekTag) === -1) {
+            desc = desc + ' ' + rekTag;
+          }
+        }
+        payload.deskripsi = desc;
+        delete payload.rekening_tujuan;
         if (uploadFile.value) {
           payload.filePayload = await SiwargaAPI.readFileAsPayload(uploadFile.value);
         }
@@ -6750,6 +6846,7 @@ window.CompFinanceKas = {
       kategoriMasuk, kategoriKeluar, activeKategoriOptions,
       kategoriList, filteredKategoriList, katDialog, katFilterTipe, savingKat, katForm,
       buktiDialog, buktiItem, buktiZoom, buktiRotate,
+      bankSelectOptions, selectedBankAccount, onMetodeChange, copyBankNorek,
       onTipeChange, openForm, submitForm, deleteTx, viewBukti, zoomBukti, toggleBuktiZoom, rotateBukti, resetBuktiView,
       openKatDialog, resetKatForm, editKategori, submitKategori, toggleKategori,
       formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, syncRibuanDom: SiwargaAPI.syncRibuanDom, formatDateID: SiwargaAPI.formatDateID
@@ -10622,6 +10719,7 @@ window.CompProfile = {
             <comp-finance-kas
               v-else-if="activePage === 'finance_kas'"
               :user="currentUser"
+              :settings="settings"
             />
             <comp-finance-report
               v-else-if="activePage === 'finance_report'"
