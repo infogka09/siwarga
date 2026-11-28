@@ -6669,27 +6669,6 @@ window.CompFinanceReport = {
             </div>
           </template>
         </div>
-
-        <!-- Ringkasan Cepat Per Bulan (Klik bulan untuk melihat rincian) -->
-        <div v-if="report.monthlyRecap && report.monthlyRecap.length" class="q-mt-md q-pt-sm" style="border-top: 1px dashed #e2e8f0;">
-          <div class="text-caption text-weight-bold text-grey-7 q-mb-xs">Rekap Dana Masuk &amp; Keluar per Bulan (Klik untuk buka):</div>
-          <div class="row q-gutter-xs">
-            <q-chip
-              v-for="m in report.monthlyRecap"
-              :key="m.periode"
-              clickable dense
-              :outline="!(filterMode === 'month' && selectedPeriode === m.periode)"
-              :color="(filterMode === 'month' && selectedPeriode === m.periode) ? 'teal-8' : (m.periode > currentYm ? 'deep-purple-7' : 'blue-grey-7')"
-              :text-color="(filterMode === 'month' && selectedPeriode === m.periode) ? 'white' : 'grey-9'"
-              @click="selectRecapMonth(m.periode)"
-            >
-              <strong>{{ formatPeriodeID(m.periode) }}</strong>
-              <span class="q-ml-xs" style="font-size: 11px;">
-                (+{{ formatRupiah(m.masuk) }} / -{{ formatRupiah(m.keluar) }})
-              </span>
-            </q-chip>
-          </div>
-        </div>
       </q-card>
 
       <!-- Header Resmi Laporan (Tampil saat Cetak & Di Layar) -->
