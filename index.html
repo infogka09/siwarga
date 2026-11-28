@@ -5221,8 +5221,22 @@ window.CompFinanceVerif = {
                     </div>
 
                     <div class="q-mt-md text-center" v-if="item.bukti_url">
-                      <img v-if="!item.bukti_url.endsWith('/preview')" :src="item.bukti_url" class="proof-thumb" style="max-height: 220px;" alt="Bukti transfer" />
-                      <q-btn v-else outline color="indigo-8" icon="open_in_new" label="Buka File Bukti di Drive" type="a" :href="item.bukti_url" target="_blank" />
+                      <template v-if="!item.bukti_url.endsWith('/preview')">
+                        <div class="relative-position inline-block cursor-pointer" @click="openProofPreview(item)">
+                          <img :src="item.bukti_url" class="proof-thumb" style="max-height: 220px; cursor: zoom-in;" alt="Bukti transfer" />
+                          <q-tooltip>Klik untuk memperbesar / preview bukti transfer</q-tooltip>
+                        </div>
+                        <div class="row justify-center q-gutter-xs q-mt-xs">
+                          <q-btn flat dense no-caps size="sm" color="teal-9" icon="zoom_in" label="Perbesar / Preview" @click="openProofPreview(item)" />
+                          <q-btn flat dense no-caps size="sm" color="indigo-7" icon="open_in_new" label="Buka Tab Baru" type="a" :href="item.bukti_url" target="_blank" />
+                        </div>
+                      </template>
+                      <template v-else>
+                        <div class="row justify-center q-gutter-xs">
+                          <q-btn outline dense color="teal-8" icon="visibility" label="Preview Bukti" @click="openProofPreview(item)" />
+                          <q-btn outline dense color="indigo-8" icon="open_in_new" label="Buka di Drive" type="a" :href="item.bukti_url" target="_blank" />
+                        </div>
+                      </template>
                     </div>
                     <div v-else class="q-mt-md q-pa-sm bg-amber-1 text-amber-10 text-caption rounded-borders">
                       <q-icon name="info" /> Tanpa lampiran gambar (pembayaran tunai / catatan manual).
@@ -5294,7 +5308,17 @@ window.CompFinanceVerif = {
                 </q-td>
               </template>
               <template #body-cell-actions="props">
-                <q-td :props="props" class="text-right">
+                <q-td :props="props" class="text-right q-gutter-xs" style="white-space: nowrap;">
+                  <q-btn
+                    v-if="props.row.bukti_url"
+                    outline dense size="sm"
+                    color="indigo-7"
+                    icon="image"
+                    label="Bukti"
+                    @click="openProofPreview(props.row)"
+                  >
+                    <q-tooltip>Preview gambar bukti pembayaran</q-tooltip>
+                  </q-btn>
                   <q-btn
                     v-if="canRevert"
                     outline dense size="sm"
@@ -5380,6 +5404,85 @@ window.CompFinanceVerif = {
           </q-card-section>
         </q-card>
       </q-dialog>
+
+      <!-- Dialog Preview / Perbesar Bukti Pembayaran -->
+      <q-dialog v-model="proofDialog" :maximized="$q.screen.lt.sm">
+        <q-card style="width: 820px; max-width: 96vw;">
+          <q-card-section class="bg-teal-9 text-white row items-center justify-between no-wrap q-py-sm">
+            <div class="ellipsis q-pr-sm">
+              <div class="text-subtitle1 text-weight-bold ellipsis">
+                Bukti Bayar · Rumah {{ proofItem.no_rumah }} ({{ proofItem.kepala_keluarga }})
+              </div>
+              <div class="text-caption text-teal-2">
+                {{ proofItem.isBatch ? ('Rapel ' + proofItem.count + ' Bulan: ' + proofItem.periodeLabel) : ('Periode ' + formatPeriodeID(proofItem.periode)) }}
+                · {{ formatRupiah(proofItem.total) }}
+                <span v-if="proofItem.rekening_tujuan"> · {{ proofItem.rekening_tujuan }}</span>
+              </div>
+            </div>
+            <q-btn flat round dense icon="close" v-close-popup />
+          </q-card-section>
+
+          <!-- Toolbar Zoom & Putar -->
+          <div class="bg-grey-2 q-px-md q-py-xs row items-center justify-between q-gutter-xs" style="border-bottom: 1px solid #e2e8f0;">
+            <div class="row items-center q-gutter-xs" v-if="proofItem.bukti_url && !proofItem.bukti_url.endsWith('/preview')">
+              <q-btn outline dense size="sm" color="grey-8" icon="zoom_out" @click="zoomProof(-0.25)" :disable="proofZoom <= 0.5">
+                <q-tooltip>Perkecil</q-tooltip>
+              </q-btn>
+              <q-btn flat dense size="sm" color="teal-9" :label="Math.round(proofZoom * 100) + '%'" @click="resetProofView">
+                <q-tooltip>Reset ukuran 100%</q-tooltip>
+              </q-btn>
+              <q-btn outline dense size="sm" color="grey-8" icon="zoom_in" @click="zoomProof(0.25)" :disable="proofZoom >= 3">
+                <q-tooltip>Perbesar</q-tooltip>
+              </q-btn>
+              <q-btn outline dense size="sm" color="grey-8" icon="rotate_right" label="Putar" @click="rotateProof" />
+            </div>
+            <div v-else class="text-caption text-grey-7">Pratinjau Dokumen Drive</div>
+            <q-btn
+              v-if="proofItem.bukti_url"
+              outline dense size="sm"
+              color="indigo-8"
+              icon="open_in_new"
+              label="Buka Asli"
+              type="a"
+              :href="proofItem.bukti_url"
+              target="_blank"
+            />
+          </div>
+
+          <!-- Area Gambar / Dokumen -->
+          <q-card-section
+            class="q-pa-md flex flex-center"
+            style="background: #1e293b; min-height: 360px; max-height: 70vh; overflow: auto;"
+          >
+            <iframe
+              v-if="proofItem.bukti_url && proofItem.bukti_url.endsWith('/preview')"
+              :src="proofItem.bukti_url"
+              style="width: 100%; height: 64vh; border: none; border-radius: 8px; background: #fff;"
+            />
+            <img
+              v-else-if="proofItem.bukti_url"
+              :src="proofItem.bukti_url"
+              alt="Preview Bukti Transfer"
+              style="max-width: 100%; max-height: 64vh; object-fit: contain; border-radius: 8px; transition: transform 0.2s ease; background: #fff;"
+              :style="{ transform: 'scale(' + proofZoom + ') rotate(' + proofRotate + 'deg)' }"
+            />
+          </q-card-section>
+
+          <q-card-actions class="bg-white q-pa-sm justify-between" style="border-top: 1px solid #e2e8f0;">
+            <div class="text-caption text-grey-7" v-if="proofItem.catatan_warga">
+              <strong>Catatan Warga:</strong> {{ proofItem.catatan_warga }}
+            </div>
+            <div v-else></div>
+            <div class="row q-gutter-xs">
+              <template v-if="String(proofItem.status || '').trim() === 'Menunggu Verifikasi'">
+                <q-btn outline dense color="negative" icon="close" label="Tolak" @click="verifyFromPreview('reject')" />
+                <q-btn unelevated dense color="positive" icon="check_circle" label="Setujui & Catat Kas" @click="verifyFromPreview('approve')" />
+              </template>
+              <q-btn flat dense label="Tutup" color="grey-8" v-close-popup />
+            </div>
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
     </div>
   `,
   setup(props, { emit }) {
@@ -5398,6 +5501,10 @@ window.CompFinanceVerif = {
     const selectedItem = ref({});
     const catatanBendahara = ref('');
     const revertTargetStatus = ref('Menunggu Verifikasi');
+    const proofDialog = ref(false);
+    const proofItem = ref({});
+    const proofZoom = ref(1);
+    const proofRotate = ref(0);
 
     const canRevert = computed(() => {
       if (!props.user) return false;
@@ -5530,6 +5637,33 @@ window.CompFinanceVerif = {
       }
     }
 
+    function openProofPreview(item) {
+      proofItem.value = item || {};
+      proofZoom.value = 1;
+      proofRotate.value = 0;
+      proofDialog.value = true;
+    }
+
+    function zoomProof(delta) {
+      const next = Math.round((proofZoom.value + delta) * 100) / 100;
+      proofZoom.value = Math.max(0.5, Math.min(3, next));
+    }
+
+    function rotateProof() {
+      proofRotate.value = (proofRotate.value + 90) % 360;
+    }
+
+    function resetProofView() {
+      proofZoom.value = 1;
+      proofRotate.value = 0;
+    }
+
+    function verifyFromPreview(type) {
+      const target = proofItem.value;
+      proofDialog.value = false;
+      openActionDialog(target, type);
+    }
+
     function openActionDialog(item, type) {
       selectedItem.value = item;
       actionType.value = type;
@@ -5590,7 +5724,8 @@ window.CompFinanceVerif = {
       historyList, filteredHistoryList, historyPeriodeOptions, histColumns,
       searchPending, searchHistory, filterHistoryStatus, filterHistoryPeriode,
       actionDialog, actionType, selectedItem, catatanBendahara, revertTargetStatus,
-      loadData, openActionDialog, submitVerify,
+      proofDialog, proofItem, proofZoom, proofRotate,
+      loadData, openActionDialog, submitVerify, openProofPreview, zoomProof, rotateProof, resetProofView, verifyFromPreview,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
     };
   }
