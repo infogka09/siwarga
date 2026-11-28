@@ -1284,6 +1284,7 @@
           base_role: getRoleMeta(found.role, db.settings).base_role,
           role_label: getRoleMeta(found.role, db.settings).label,
           kk_id: found.kk_id, no_rumah: found.no_rumah,
+          foto_url: found.foto_url || '',
           must_change_password: weakList.indexOf(found.password) !== -1 || found.password === patternPwd
         };
         db.sessions[newTok] = safeUser;
@@ -1418,6 +1419,7 @@
         const safeUser = {
           id: target.id, username: target.username, nama: target.nama, role: target.role,
           kk_id: target.kk_id || '', no_rumah: target.no_rumah || '',
+          foto_url: target.foto_url || '',
           must_change_password: false,
           impersonated_by: { id: actor.id, username: actor.username, nama: actor.nama, role: actor.role }
         };
@@ -1435,6 +1437,7 @@
         const safeOrig = {
           id: orig.id, username: orig.username, nama: orig.nama, role: orig.role,
           kk_id: orig.kk_id || '', no_rumah: orig.no_rumah || '',
+          foto_url: orig.foto_url || '',
           must_change_password: false,
           impersonated_by: null
         };
@@ -1445,7 +1448,7 @@
       case 'getMyProfile': {
         const u = needAuth();
         const dbU = db.users.find(function (x) { return x.id === u.id; }) || u;
-        const safeUser = { id: dbU.id, username: dbU.username, nama: dbU.nama, role: dbU.role, kk_id: dbU.kk_id || '', no_rumah: dbU.no_rumah || '', status: dbU.status || 'Aktif' };
+        const safeUser = { id: dbU.id, username: dbU.username, nama: dbU.nama, role: dbU.role, kk_id: dbU.kk_id || '', no_rumah: dbU.no_rumah || '', foto_url: dbU.foto_url || '', status: dbU.status || 'Aktif' };
         const kk = safeUser.kk_id ? (db.keluarga.find(function (k) { return k.id === safeUser.kk_id; }) || null) : null;
         const anggota = safeUser.kk_id ? db.warga.filter(function (w) { return w.kk_id === safeUser.kk_id; }) : [];
         return { user: safeUser, keluarga: kk, anggota: anggota };
@@ -1455,8 +1458,20 @@
         const newNama = String((payload && payload.nama_akun) || u.nama || '').trim();
         if (!newNama) throw new Error('Nama akun tidak boleh kosong.');
         const uIdx = db.users.findIndex(function (x) { return x.id === u.id; });
-        if (uIdx >= 0) db.users[uIdx].nama = newNama;
-        if (token && db.sessions[token]) db.sessions[token].nama = newNama;
+        let newFoto = (uIdx >= 0 ? db.users[uIdx].foto_url : u.foto_url) || '';
+        if (payload && payload.fotoFilePayload && payload.fotoFilePayload.base64Data) {
+          newFoto = payload.fotoFilePayload.base64Data;
+        } else if (payload && payload.hapus_foto === true) {
+          newFoto = '';
+        }
+        if (uIdx >= 0) {
+          db.users[uIdx].nama = newNama;
+          db.users[uIdx].foto_url = newFoto;
+        }
+        if (token && db.sessions[token]) {
+          db.sessions[token].nama = newNama;
+          db.sessions[token].foto_url = newFoto;
+        }
         if (u.kk_id && payload && payload.keluarga) {
           const kIdx = db.keluarga.findIndex(function (k) { return k.id === u.kk_id; });
           if (kIdx >= 0) {
@@ -8469,17 +8484,47 @@ window.CompProfile = {
       <div class="row items-center justify-between q-mb-md q-gutter-sm">
         <div>
           <div class="text-h6 text-weight-bold text-grey-9">Profil Saya &amp; Keamanan Akun</div>
-          <div class="text-caption text-grey-6">Perbarui biodata diri, kontak WhatsApp keluarga, dan ganti password login Anda</div>
+          <div class="text-caption text-grey-6">Perbarui foto profil, biodata diri, kontak WhatsApp keluarga, dan ganti password login Anda</div>
         </div>
       </div>
 
-      <!-- Ringkasan Identitas Akun -->
+      <!-- Ringkasan Identitas Akun & Foto Profil -->
       <q-card flat class="surface-card q-pa-md q-mb-md" style="background: linear-gradient(90deg, #f0fdfa 0%, #ffffff 100%);">
+        <input ref="fotoInputRef" type="file" accept="image/*" style="display: none;" @change="onPickFotoNative" />
         <div class="row items-center q-col-gutter-md">
           <div class="col-auto">
-            <q-avatar size="56px" color="teal-8" text-color="white" class="text-h6 text-weight-bold">
-              {{ initials }}
-            </q-avatar>
+            <div style="position: relative; display: inline-block;">
+              <q-avatar
+                size="74px"
+                color="teal-8"
+                text-color="white"
+                class="text-h5 text-weight-bold shadow-2 cursor-pointer overflow-hidden"
+                style="border: 3px solid #ffffff;"
+                @click="onAvatarClick"
+              >
+                <img
+                  v-if="avatarSrc && !avatarLoadError"
+                  :src="avatarSrc"
+                  alt="Foto Profil"
+                  style="width: 100%; height: 100%; object-fit: cover;"
+                  @error="avatarLoadError = true"
+                />
+                <span v-else>{{ initials }}</span>
+                <q-tooltip>{{ (avatarSrc && !avatarLoadError) ? 'Klik untuk perbesar foto profil' : 'Klik untuk unggah foto profil' }}</q-tooltip>
+              </q-avatar>
+              <q-btn
+                round
+                dense
+                unelevated
+                size="xs"
+                color="teal-9"
+                icon="photo_camera"
+                style="position: absolute; right: -2px; bottom: -2px; border: 2px solid #ffffff;"
+                @click.stop="triggerPickFoto"
+              >
+                <q-tooltip>Ganti Foto Profil</q-tooltip>
+              </q-btn>
+            </div>
           </div>
           <div class="col">
             <div class="text-subtitle1 text-weight-bolder text-grey-9">{{ profileUser.nama || user.nama }}</div>
@@ -8488,6 +8533,57 @@ window.CompProfile = {
               · Rumah: <strong>{{ profileUser.no_rumah || '-' }}</strong>
               <q-badge :color="roleMeta.color" class="q-ml-xs">{{ roleMeta.label }}</q-badge>
             </div>
+            <div class="row wrap items-center q-gutter-xs q-mt-xs">
+              <q-btn
+                outline
+                dense
+                no-caps
+                size="sm"
+                color="teal-8"
+                icon="photo_camera"
+                :label="(avatarSrc && !avatarLoadError) ? 'Ganti Foto' : 'Upload Foto Profil'"
+                :disable="savingFoto || savingProfile"
+                @click="triggerPickFoto"
+              />
+              <q-btn
+                v-if="pendingFotoPayload"
+                unelevated
+                dense
+                no-caps
+                size="sm"
+                color="teal-8"
+                icon="cloud_upload"
+                label="Simpan Foto"
+                :loading="savingFoto"
+                @click="saveFotoOnly"
+              />
+              <q-btn
+                v-if="pendingFotoPayload"
+                flat
+                dense
+                no-caps
+                size="sm"
+                color="grey-7"
+                label="Batal"
+                :disable="savingFoto"
+                @click="cancelPendingFoto"
+              />
+              <q-btn
+                v-if="!pendingFotoPayload && profileUser.foto_url"
+                flat
+                dense
+                no-caps
+                size="sm"
+                color="negative"
+                icon="delete_outline"
+                label="Hapus Foto"
+                :loading="savingFoto"
+                @click="confirmRemoveFoto"
+              />
+            </div>
+            <div v-if="pendingFotoPayload" class="text-caption text-teal-9 q-mt-xs">
+              <q-icon name="info" size="14px" class="q-mr-xs" />Pratinjau foto baru siap — klik <strong>Simpan Foto</strong> atau <strong>Simpan Perubahan Data Diri</strong>.
+            </div>
           </div>
           <div class="col-12 col-sm-auto text-sm-right" v-if="keluarga">
             <div class="text-caption text-grey-6">Tarif IPL Bulanan</div>
@@ -8495,6 +8591,28 @@ window.CompProfile = {
           </div>
         </div>
       </q-card>
+
+      <!-- Dialog Pratinjau Foto Profil -->
+      <q-dialog v-model="fotoPreviewDialog">
+        <q-card style="width: 460px; max-width: 94vw; border-radius: 16px;">
+          <q-card-section class="bg-teal-9 text-white row items-center justify-between q-py-sm">
+            <div class="text-subtitle1 text-weight-bold ellipsis">Foto Profil — {{ profileUser.nama || user.nama }}</div>
+            <q-btn flat round dense icon="close" v-close-popup />
+          </q-card-section>
+          <q-card-section class="text-center bg-grey-2 q-pa-md">
+            <img
+              v-if="avatarSrc"
+              :src="avatarSrc"
+              alt="Foto Profil"
+              style="max-width: 100%; max-height: 65vh; border-radius: 12px; object-fit: contain;"
+            />
+          </q-card-section>
+          <q-card-actions align="right" class="q-px-md q-pb-sm">
+            <q-btn outline dense no-caps color="teal-8" icon="photo_camera" label="Ganti Foto" v-close-popup @click="triggerPickFoto" />
+            <q-btn flat dense no-caps label="Tutup" v-close-popup />
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
 
       <q-card flat class="surface-card">
         <q-tabs v-model="tab" dense align="left" active-color="teal-8" indicator-color="teal-8" class="text-grey-7 q-px-md q-pt-sm">
@@ -8699,10 +8817,17 @@ window.CompProfile = {
     const tab = ref(props.initialTab === 'password' ? 'password' : 'data');
     const loading = ref(false);
     const savingProfile = ref(false);
+    const savingFoto = ref(false);
     const savingPwd = ref(false);
     const showCur = ref(false);
     const showNew = ref(false);
     const showConf = ref(false);
+
+    const fotoInputRef = ref(null);
+    const pendingFotoPayload = ref(null);
+    const fotoPreviewDataUrl = ref('');
+    const avatarLoadError = ref(false);
+    const fotoPreviewDialog = ref(false);
 
     const profileUser = ref(Object.assign({}, props.user));
     const keluarga = ref(null);
@@ -8717,10 +8842,166 @@ window.CompProfile = {
     });
     const pwdForm = reactive({ current_password: '', new_password: '', confirm_password: '' });
 
+    const avatarSrc = computed(() => fotoPreviewDataUrl.value || (profileUser.value && profileUser.value.foto_url) || '');
+
     const initials = computed(() => {
       const n = (profileUser.value && profileUser.value.nama) || 'U';
       return n.split(' ').slice(0, 2).map(s => s[0] || '').join('').toUpperCase();
     });
+
+    function triggerPickFoto() {
+      if (fotoInputRef.value) {
+        fotoInputRef.value.value = '';
+        fotoInputRef.value.click();
+      }
+    }
+
+    function onAvatarClick() {
+      if (avatarSrc.value && !avatarLoadError.value) {
+        fotoPreviewDialog.value = true;
+      } else {
+        triggerPickFoto();
+      }
+    }
+
+    function resizeProfileImage(file) {
+      return new Promise((resolve, reject) => {
+        if (!file) return resolve(null);
+        if (!file.type || !file.type.startsWith('image/')) {
+          return reject(new Error('File foto profil harus berupa gambar (JPG, PNG, atau WEBP).'));
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          return reject(new Error('Ukuran file terlalu besar (maksimal 10 MB).'));
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+        reader.onload = () => {
+          const dataUrl = reader.result;
+          const img = new Image();
+          img.onerror = () => {
+            // Fallback ke data asli jika browser gagal decode ke canvas
+            if (file.size > 5 * 1024 * 1024) {
+              return reject(new Error('Ukuran file maksimal 5 MB.'));
+            }
+            resolve({
+              fileName: file.name || 'foto_profil.jpg',
+              mimeType: file.type || 'image/jpeg',
+              base64Data: dataUrl
+            });
+          };
+          img.onload = () => {
+            try {
+              const maxDim = 600;
+              let w = img.naturalWidth || img.width;
+              let h = img.naturalHeight || img.height;
+              if (w > maxDim || h > maxDim) {
+                if (w >= h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, w, h);
+              ctx.drawImage(img, 0, 0, w, h);
+              const outUrl = canvas.toDataURL('image/jpeg', 0.86);
+              const baseName = (file.name || 'foto_profil').replace(/\.[^.]+$/, '');
+              resolve({
+                fileName: baseName + '.jpg',
+                mimeType: 'image/jpeg',
+                base64Data: outUrl
+              });
+            } catch (e) {
+              resolve({
+                fileName: file.name || 'foto_profil.jpg',
+                mimeType: file.type || 'image/jpeg',
+                base64Data: dataUrl
+              });
+            }
+          };
+          img.src = dataUrl;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function onPickFotoNative(evt) {
+      const files = evt && evt.target && evt.target.files;
+      const file = files && files[0];
+      if (!file) return;
+      try {
+        const prepared = await resizeProfileImage(file);
+        if (prepared && prepared.base64Data) {
+          pendingFotoPayload.value = prepared;
+          fotoPreviewDataUrl.value = prepared.base64Data;
+          avatarLoadError.value = false;
+        }
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message || 'Gagal memproses foto profil.' });
+      }
+    }
+
+    function cancelPendingFoto() {
+      pendingFotoPayload.value = null;
+      fotoPreviewDataUrl.value = '';
+      avatarLoadError.value = false;
+      if (fotoInputRef.value) fotoInputRef.value.value = '';
+    }
+
+    async function saveFotoOnly() {
+      if (!pendingFotoPayload.value) return;
+      savingFoto.value = true;
+      try {
+        const res = await SiwargaAPI.call('updateMyProfile', {
+          nama_akun: accountForm.nama_akun || profileUser.value.nama || props.user.nama,
+          fotoFilePayload: pendingFotoPayload.value
+        });
+        pendingFotoPayload.value = null;
+        fotoPreviewDataUrl.value = '';
+        avatarLoadError.value = false;
+        applyProfileResponse(res);
+        emit('user-updated', res.user);
+        $q.notify({ type: 'positive', message: 'Foto profil berhasil diperbarui!' });
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message });
+      } finally {
+        savingFoto.value = false;
+      }
+    }
+
+    function confirmRemoveFoto() {
+      $q.dialog({
+        title: 'Hapus Foto Profil',
+        message: 'Apakah Anda yakin ingin menghapus foto profil saat ini dan kembali ke inisial nama?',
+        cancel: { label: 'Batal', flat: true, color: 'grey-8' },
+        ok: { label: 'Ya, Hapus', color: 'negative', unelevated: true },
+        persistent: true
+      }).onOk(async () => {
+        savingFoto.value = true;
+        try {
+          const res = await SiwargaAPI.call('updateMyProfile', {
+            nama_akun: accountForm.nama_akun || profileUser.value.nama || props.user.nama,
+            hapus_foto: true
+          });
+          pendingFotoPayload.value = null;
+          fotoPreviewDataUrl.value = '';
+          avatarLoadError.value = false;
+          applyProfileResponse(res);
+          emit('user-updated', res.user);
+          $q.notify({ type: 'info', message: 'Foto profil berhasil dihapus.' });
+        } catch (err) {
+          $q.notify({ type: 'negative', message: err.message });
+        } finally {
+          savingFoto.value = false;
+        }
+      });
+    }
 
     const anggotaOptions = computed(() => anggotaList.value.map(w => ({
       value: w.id,
@@ -8730,6 +9011,7 @@ window.CompProfile = {
     function applyProfileResponse(res) {
       if (!res) return;
       profileUser.value = res.user || props.user;
+      avatarLoadError.value = false;
       accountForm.nama_akun = profileUser.value.nama || '';
       keluarga.value = res.keluarga || null;
       anggotaList.value = res.anggota || [];
@@ -8797,10 +9079,16 @@ window.CompProfile = {
           keluarga: keluarga.value ? Object.assign({}, kkForm) : null,
           warga: (keluarga.value && wargaForm.nama_lengkap) ? Object.assign({}, wargaForm) : null
         };
+        if (pendingFotoPayload.value) {
+          payload.fotoFilePayload = pendingFotoPayload.value;
+        }
         const res = await SiwargaAPI.call('updateMyProfile', payload);
+        pendingFotoPayload.value = null;
+        fotoPreviewDataUrl.value = '';
+        avatarLoadError.value = false;
         applyProfileResponse(res);
         emit('user-updated', res.user);
-        $q.notify({ type: 'positive', message: 'Data diri & keluarga berhasil diperbarui!' });
+        $q.notify({ type: 'positive', message: 'Profil & data diri berhasil diperbarui!' });
       } catch (err) {
         $q.notify({ type: 'negative', message: err.message });
       } finally {
@@ -8829,9 +9117,11 @@ window.CompProfile = {
     onMounted(loadProfile);
 
     return {
-      tab, loading, savingProfile, savingPwd, showCur, showNew, showConf,
+      tab, loading, savingProfile, savingFoto, savingPwd, showCur, showNew, showConf,
+      fotoInputRef, pendingFotoPayload, fotoPreviewDataUrl, avatarLoadError, fotoPreviewDialog, avatarSrc,
       profileUser, keluarga, anggotaList, selectedWargaId, anggotaOptions,
       accountForm, kkForm, wargaForm, pwdForm, initials, roleMeta,
+      triggerPickFoto, onAvatarClick, onPickFotoNative, cancelPendingFoto, saveFotoOnly, confirmRemoveFoto,
       onSelectAnggota, startNewAnggota, submitProfile, submitPassword,
       formatRupiah: SiwargaAPI.formatRupiah
     };
@@ -8866,7 +9156,7 @@ window.CompProfile = {
     return;
   }
 
-  const { createApp, ref, reactive, computed, onMounted } = Vue;
+  const { createApp, ref, reactive, computed, watch, onMounted } = Vue;
 
   const MENU_TITLES = {
     dashboard: 'Dashboard Utama',
@@ -9099,8 +9389,15 @@ window.CompProfile = {
           </q-btn>
 
           <q-btn flat no-caps class="q-ml-xs" rounded>
-            <q-avatar size="32px" :color="isSuperadmin ? 'deep-purple-8' : 'teal-8'" text-color="white" class="q-mr-sm text-weight-bold">
-              {{ userInitials }}
+            <q-avatar size="34px" :color="isSuperadmin ? 'deep-purple-8' : 'teal-8'" text-color="white" class="q-mr-sm text-weight-bold overflow-hidden">
+              <img
+                v-if="currentUser.foto_url && !headerAvatarError"
+                :src="currentUser.foto_url"
+                alt="Foto Profil"
+                style="width: 100%; height: 100%; object-fit: cover;"
+                @error="headerAvatarError = true"
+              />
+              <span v-else>{{ userInitials }}</span>
             </q-avatar>
             <div class="text-left gt-xs">
               <div class="text-body2 text-weight-bold leading-tight">{{ currentUser.nama }}</div>
@@ -9579,9 +9876,15 @@ window.CompProfile = {
 
         function onUserUpdated(updatedUser) {
           if (updatedUser && currentUser.value) {
+            headerAvatarError.value = false;
             currentUser.value = Object.assign({}, currentUser.value, updatedUser);
           }
         }
+
+        const headerAvatarError = ref(false);
+        watch(() => currentUser.value && currentUser.value.foto_url, () => {
+          headerAvatarError.value = false;
+        });
 
         async function refreshPublicConfig() {
           try {
@@ -9738,6 +10041,7 @@ window.CompProfile = {
           menuLabel,
           groupLabel,
           userInitials,
+          headerAvatarError,
           showPassword,
           loginLoading,
           stoppingImpersonate,
