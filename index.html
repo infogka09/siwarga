@@ -4499,24 +4499,74 @@ window.CompFinanceIpl = {
         </q-card>
       </q-dialog>
 
-      <!-- Dialog Pratinjau Bukti -->
-      <q-dialog v-model="proofDialog">
-        <q-card style="width: 560px; max-width: 95vw;">
-          <q-card-section class="row items-center justify-between bg-grey-9 text-white">
-            <div class="text-subtitle1 text-weight-bold">Bukti Bayar — Rumah {{ proofItem.no_rumah }} ({{ formatPeriodeID(proofItem.periode) }})</div>
+      <!-- Dialog Pratinjau & Perbesar Bukti -->
+      <q-dialog v-model="proofDialog" :maximized="$q.screen.lt.sm">
+        <q-card style="width: 860px; max-width: 96vw;">
+          <q-card-section class="row items-center justify-between no-wrap bg-teal-9 text-white q-py-sm">
+            <div class="ellipsis q-pr-sm">
+              <div class="text-subtitle1 text-weight-bold ellipsis">Bukti Bayar — Rumah {{ proofItem.no_rumah }} ({{ formatPeriodeID(proofItem.periode) }})</div>
+              <div class="text-caption text-teal-2 ellipsis">
+                {{ proofItem.kepala_keluarga || '-' }} · {{ formatRupiah(proofItem.total || proofItem.nominal) }}
+              </div>
+            </div>
             <q-btn flat round dense icon="close" v-close-popup />
           </q-card-section>
-          <q-card-section class="text-center">
-            <img v-if="proofItem.bukti_url && !proofItem.bukti_url.endsWith('/preview')" :src="proofItem.bukti_url" class="proof-thumb" alt="Bukti pembayaran" />
-            <div v-else class="q-pa-md">
-              <q-btn color="teal-8" icon="open_in_new" label="Buka File Bukti di Google Drive" type="a" :href="proofItem.bukti_url" target="_blank" />
+
+          <div class="bg-grey-2 q-px-md q-py-xs row items-center justify-between q-gutter-xs" style="border-bottom: 1px solid #e2e8f0;">
+            <div class="row items-center q-gutter-xs" v-if="proofItem.bukti_url && !proofItem.bukti_url.endsWith('/preview')">
+              <q-btn outline dense size="sm" color="grey-8" icon="zoom_out" @click="zoomProof(-0.25)" :disable="proofZoom <= 0.5">
+                <q-tooltip>Perkecil</q-tooltip>
+              </q-btn>
+              <q-btn flat dense size="sm" color="teal-9" :label="Math.round(proofZoom * 100) + '%'" @click="resetProofView">
+                <q-tooltip>Reset ukuran 100%</q-tooltip>
+              </q-btn>
+              <q-btn outline dense size="sm" color="grey-8" icon="zoom_in" @click="zoomProof(0.25)" :disable="proofZoom >= 3">
+                <q-tooltip>Perbesar</q-tooltip>
+              </q-btn>
+              <q-btn outline dense size="sm" color="grey-8" icon="rotate_right" label="Putar" @click="rotateProof" />
+              <span class="text-caption text-grey-6 gt-xs q-ml-xs">(Klik gambar untuk zoom cepat)</span>
             </div>
-            <div class="text-caption text-grey-7 q-mt-sm">
+            <div v-else class="text-caption text-grey-7">Pratinjau Dokumen Drive</div>
+            <q-btn
+              v-if="proofItem.bukti_url"
+              outline dense size="sm"
+              color="indigo-8"
+              icon="open_in_new"
+              label="Buka Asli"
+              type="a"
+              :href="proofItem.bukti_url"
+              target="_blank"
+            />
+          </div>
+
+          <q-card-section
+            class="q-pa-md text-center"
+            style="background: #1e293b; min-height: 360px; max-height: 72vh; overflow: auto;"
+          >
+            <iframe
+              v-if="proofItem.bukti_url && proofItem.bukti_url.endsWith('/preview')"
+              :src="proofItem.bukti_url"
+              style="width: 100%; height: 66vh; border: none; border-radius: 8px; background: #fff;"
+            />
+            <img
+              v-else-if="proofItem.bukti_url"
+              :src="proofItem.bukti_url"
+              alt="Bukti pembayaran"
+              @click="toggleProofZoom"
+              :style="proofZoom > 1
+                ? { height: Math.round(68 * proofZoom) + 'vh', width: 'auto', maxWidth: 'none', borderRadius: '8px', background: '#fff', cursor: 'zoom-out', transform: proofRotate ? ('rotate(' + proofRotate + 'deg)') : 'none', transition: 'all 0.2s ease' }
+                : { maxWidth: '100%', maxHeight: '66vh', objectFit: 'contain', borderRadius: '8px', background: '#fff', cursor: 'zoom-in', transform: 'scale(' + proofZoom + ') rotate(' + proofRotate + 'deg)', transition: 'all 0.2s ease' }"
+            />
+          </q-card-section>
+
+          <q-card-actions class="bg-white q-px-md q-py-sm justify-between" style="border-top: 1px solid #e2e8f0;">
+            <div class="text-caption text-grey-7 col q-pr-sm" style="word-break: break-word;">
               Metode: <strong>{{ proofItem.metode_bayar || '-' }}</strong>
               <span v-if="proofItem.rekening_tujuan"> · Tujuan: <strong class="text-teal-9 mono-num">{{ proofItem.rekening_tujuan }}</strong></span>
               · Diunggah: {{ formatDateID(proofItem.tanggal_upload) }} · {{ proofItem.catatan_warga || '-' }}
             </div>
-          </q-card-section>
+            <q-btn flat dense color="grey-8" label="Tutup" v-close-popup />
+          </q-card-actions>
         </q-card>
       </q-dialog>
 
@@ -4657,6 +4707,8 @@ window.CompFinanceIpl = {
     });
     const proofDialog = ref(false);
     const proofItem = ref({});
+    const proofZoom = ref(1);
+    const proofRotate = ref(0);
     const sendingSingleId = ref('');
     const waBulkDialog = ref(false);
     const selectedWaIds = ref([]);
@@ -5045,8 +5097,28 @@ window.CompFinanceIpl = {
     }
 
     function openProofPreview(bill) {
-      proofItem.value = bill;
+      proofItem.value = bill || {};
+      proofZoom.value = 1;
+      proofRotate.value = 0;
       proofDialog.value = true;
+    }
+
+    function zoomProof(delta) {
+      const next = Math.round((proofZoom.value + delta) * 100) / 100;
+      proofZoom.value = Math.max(0.5, Math.min(3, next));
+    }
+
+    function toggleProofZoom() {
+      proofZoom.value = proofZoom.value > 1 ? 1 : 2;
+    }
+
+    function rotateProof() {
+      proofRotate.value = (proofRotate.value + 90) % 360;
+    }
+
+    function resetProofView() {
+      proofZoom.value = 1;
+      proofRotate.value = 0;
     }
 
     function copyRekening(norek, bankName) {
@@ -5143,11 +5215,11 @@ window.CompFinanceIpl = {
       columns, periodeFilterOptions, periodeGenerateOptions, periodeRapelOptions, filteredRapelPeriodeOptions, filteredRows, unpaidRows, activeBankAccounts, bankSelectOptions, selectedUploadBank, selectedRapelBank, summary, genDialog, genForm,
       uploadDialog, selectedBill, uploadFile, uploadPreviewDataUrl, uploadForm,
       currentYm, currentYear, rapelDialog, loadingKk, filteredKkOptions, rapelFile, rapelPreviewDataUrl, rapelForm, rapelPreview,
-      proofDialog, proofItem, sendingSingleId, waBulkDialog, selectedWaIds, waBulkTemplate,
+      proofDialog, proofItem, proofZoom, proofRotate, sendingSingleId, waBulkDialog, selectedWaIds, waBulkTemplate,
       sendingBulkWa, waBulkResult, waLogDialog, loadingLogs, waLogs, waLogColumns,
       statusColor, loadData, openGenerateDialog, submitGenerate,
       openUploadDialog, onPickFile, submitUpload, openRapelDialog, filterKkSelect, filterRapelPeriodeSelect, addAllUnpaidToCustom, onSelectRapelKk, setRapelEndCurrent, setRapelEndYear, onPickRapelFile, submitRapel,
-      openProofPreview, copyRekening,
+      openProofPreview, zoomProof, toggleProofZoom, rotateProof, resetProofView, copyRekening,
       buildWaMeLink, sendSingleWa, openWaBulkDialog, selectAllWa, submitWaBulk, openWaLogDialog,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID, formatPeriodsSummary: SiwargaAPI.formatPeriodsSummary
     };
@@ -5481,20 +5553,22 @@ window.CompFinanceVerif = {
 
           <!-- Area Gambar / Dokumen -->
           <q-card-section
-            class="q-pa-md flex flex-center"
-            style="background: #1e293b; min-height: 360px; max-height: 70vh; overflow: auto;"
+            class="q-pa-md text-center"
+            style="background: #1e293b; min-height: 360px; max-height: 72vh; overflow: auto;"
           >
             <iframe
               v-if="proofItem.bukti_url && proofItem.bukti_url.endsWith('/preview')"
               :src="proofItem.bukti_url"
-              style="width: 100%; height: 64vh; border: none; border-radius: 8px; background: #fff;"
+              style="width: 100%; height: 66vh; border: none; border-radius: 8px; background: #fff;"
             />
             <img
               v-else-if="proofItem.bukti_url"
               :src="proofItem.bukti_url"
               alt="Preview Bukti Transfer"
-              style="max-width: 100%; max-height: 64vh; object-fit: contain; border-radius: 8px; transition: transform 0.2s ease; background: #fff;"
-              :style="{ transform: 'scale(' + proofZoom + ') rotate(' + proofRotate + 'deg)' }"
+              @click="proofZoom = proofZoom > 1 ? 1 : 2"
+              :style="proofZoom > 1
+                ? { height: Math.round(68 * proofZoom) + 'vh', width: 'auto', maxWidth: 'none', borderRadius: '8px', background: '#fff', cursor: 'zoom-out', transform: proofRotate ? ('rotate(' + proofRotate + 'deg)') : 'none', transition: 'all 0.2s ease' }
+                : { maxWidth: '100%', maxHeight: '66vh', objectFit: 'contain', borderRadius: '8px', background: '#fff', cursor: 'zoom-in', transform: 'scale(' + proofZoom + ') rotate(' + proofRotate + 'deg)', transition: 'all 0.2s ease' }"
             />
           </q-card-section>
 
@@ -6041,18 +6115,74 @@ window.CompFinanceKas = {
         </q-card>
       </q-dialog>
 
-      <!-- Dialog Lihat Nota -->
-      <q-dialog v-model="buktiDialog">
-        <q-card style="width: 520px; max-width: 95vw;">
-          <q-card-section class="bg-grey-9 text-white row items-center justify-between">
-            <div class="text-subtitle1 text-weight-bold">Bukti Transaksi Kas</div>
+      <!-- Dialog Lihat & Perbesar Nota / Kwitansi -->
+      <q-dialog v-model="buktiDialog" :maximized="$q.screen.lt.sm">
+        <q-card style="width: 860px; max-width: 96vw;">
+          <q-card-section class="bg-teal-9 text-white row items-center justify-between no-wrap q-py-sm">
+            <div class="ellipsis q-pr-sm">
+              <div class="text-subtitle1 text-weight-bold ellipsis">Bukti Transaksi Kas</div>
+              <div class="text-caption text-teal-2 ellipsis">
+                {{ formatDateID(buktiItem.tanggal) }} · {{ buktiItem.kategori || '-' }} · {{ formatRupiah(buktiItem.nominal) }}
+              </div>
+            </div>
             <q-btn flat round dense icon="close" v-close-popup />
           </q-card-section>
-          <q-card-section class="text-center">
-            <img v-if="buktiItem.bukti_url && !buktiItem.bukti_url.endsWith('/preview')" :src="buktiItem.bukti_url" class="proof-thumb" alt="Nota kas" />
-            <q-btn v-else color="teal-8" icon="open_in_new" label="Buka Bukti di Google Drive" type="a" :href="buktiItem.bukti_url" target="_blank" />
-            <div class="text-caption text-grey-7 q-mt-sm">{{ buktiItem.deskripsi }} ({{ formatRupiah(buktiItem.nominal) }})</div>
+
+          <!-- Toolbar Zoom & Putar -->
+          <div class="bg-grey-2 q-px-md q-py-xs row items-center justify-between q-gutter-xs" style="border-bottom: 1px solid #e2e8f0;">
+            <div class="row items-center q-gutter-xs" v-if="buktiItem.bukti_url && !buktiItem.bukti_url.endsWith('/preview')">
+              <q-btn outline dense size="sm" color="grey-8" icon="zoom_out" @click="zoomBukti(-0.25)" :disable="buktiZoom <= 0.5">
+                <q-tooltip>Perkecil</q-tooltip>
+              </q-btn>
+              <q-btn flat dense size="sm" color="teal-9" :label="Math.round(buktiZoom * 100) + '%'" @click="resetBuktiView">
+                <q-tooltip>Reset ukuran 100%</q-tooltip>
+              </q-btn>
+              <q-btn outline dense size="sm" color="grey-8" icon="zoom_in" @click="zoomBukti(0.25)" :disable="buktiZoom >= 3">
+                <q-tooltip>Perbesar</q-tooltip>
+              </q-btn>
+              <q-btn outline dense size="sm" color="grey-8" icon="rotate_right" label="Putar" @click="rotateBukti" />
+              <span class="text-caption text-grey-6 gt-xs q-ml-xs">(Klik gambar untuk zoom cepat)</span>
+            </div>
+            <div v-else class="text-caption text-grey-7">Pratinjau Dokumen Drive</div>
+            <q-btn
+              v-if="buktiItem.bukti_url"
+              outline dense size="sm"
+              color="indigo-8"
+              icon="open_in_new"
+              label="Buka Asli"
+              type="a"
+              :href="buktiItem.bukti_url"
+              target="_blank"
+            />
+          </div>
+
+          <!-- Area Gambar / Dokumen Scrollable -->
+          <q-card-section
+            class="q-pa-md text-center"
+            style="background: #1e293b; min-height: 360px; max-height: 72vh; overflow: auto;"
+          >
+            <iframe
+              v-if="buktiItem.bukti_url && buktiItem.bukti_url.endsWith('/preview')"
+              :src="buktiItem.bukti_url"
+              style="width: 100%; height: 66vh; border: none; border-radius: 8px; background: #fff;"
+            />
+            <img
+              v-else-if="buktiItem.bukti_url"
+              :src="buktiItem.bukti_url"
+              alt="Nota kas"
+              @click="toggleBuktiZoom"
+              :style="buktiZoom > 1
+                ? { height: Math.round(68 * buktiZoom) + 'vh', width: 'auto', maxWidth: 'none', borderRadius: '8px', background: '#fff', cursor: 'zoom-out', transform: buktiRotate ? ('rotate(' + buktiRotate + 'deg)') : 'none', transition: 'all 0.2s ease' }
+                : { maxWidth: '100%', maxHeight: '66vh', objectFit: 'contain', borderRadius: '8px', background: '#fff', cursor: 'zoom-in', transform: 'scale(' + buktiZoom + ') rotate(' + buktiRotate + 'deg)', transition: 'all 0.2s ease' }"
+            />
           </q-card-section>
+
+          <q-card-actions class="bg-white q-px-md q-py-sm justify-between" style="border-top: 1px solid #e2e8f0;">
+            <div class="text-caption text-grey-8 col q-pr-sm" style="word-break: break-word;">
+              {{ buktiItem.deskripsi }} (<strong>{{ formatRupiah(buktiItem.nominal) }}</strong>)
+            </div>
+            <q-btn flat dense color="grey-8" label="Tutup" v-close-popup />
+          </q-card-actions>
         </q-card>
       </q-dialog>
     </div>
@@ -6073,6 +6203,8 @@ window.CompFinanceKas = {
     const uploadFile = ref(null);
     const buktiDialog = ref(false);
     const buktiItem = ref({});
+    const buktiZoom = ref(1);
+    const buktiRotate = ref(0);
     const kategoriList = ref([]);
     const katDialog = ref(false);
     const katFilterTipe = ref('Semua');
@@ -6240,8 +6372,28 @@ window.CompFinanceKas = {
     }
 
     function viewBukti(row) {
-      buktiItem.value = row;
+      buktiItem.value = row || {};
+      buktiZoom.value = 1;
+      buktiRotate.value = 0;
       buktiDialog.value = true;
+    }
+
+    function zoomBukti(delta) {
+      const next = Math.round((buktiZoom.value + delta) * 100) / 100;
+      buktiZoom.value = Math.max(0.5, Math.min(3, next));
+    }
+
+    function toggleBuktiZoom() {
+      buktiZoom.value = buktiZoom.value > 1 ? 1 : 2;
+    }
+
+    function rotateBukti() {
+      buktiRotate.value = (buktiRotate.value + 90) % 360;
+    }
+
+    function resetBuktiView() {
+      buktiZoom.value = 1;
+      buktiRotate.value = 0;
     }
 
     onMounted(loadData);
@@ -6251,8 +6403,8 @@ window.CompFinanceKas = {
       columns, filteredRows, totals, dialog, form, uploadFile,
       kategoriMasuk, kategoriKeluar, activeKategoriOptions,
       kategoriList, filteredKategoriList, katDialog, katFilterTipe, savingKat, katForm,
-      buktiDialog, buktiItem,
-      onTipeChange, openForm, submitForm, deleteTx, viewBukti,
+      buktiDialog, buktiItem, buktiZoom, buktiRotate,
+      onTipeChange, openForm, submitForm, deleteTx, viewBukti, zoomBukti, toggleBuktiZoom, rotateBukti, resetBuktiView,
       openKatDialog, resetKatForm, editKategori, submitKategori, toggleKategori,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID
     };
