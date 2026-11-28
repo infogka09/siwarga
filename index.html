@@ -1730,21 +1730,26 @@
         db.keluarga.forEach(function (k) { kkMap[k.id] = k; });
         let rows = db.tagihan.map(function (t) {
           const kk = kkMap[t.kk_id] || {};
-          return Object.assign({}, t, { no_hp: kk.no_hp || '' });
+          return Object.assign({}, t, {
+            periode: String(t.periode || '').trim().substring(0, 7),
+            status: String(t.status || '').trim(),
+            no_hp: kk.no_hp || ''
+          });
         });
-        if (u.role === 'warga') rows = rows.filter(function (t) { return t.kk_id === u.kk_id; });
+        if (isWargaRole(u, db.settings)) rows = rows.filter(function (t) { return String(t.kk_id) === String(u.kk_id); });
         if (payload && payload.periode && payload.periode !== 'ALL') {
-          rows = rows.filter(function (t) { return t.periode === payload.periode; });
+          const targetP = String(payload.periode).trim().substring(0, 7);
+          rows = rows.filter(function (t) { return String(t.periode || '').trim().substring(0, 7) === targetP; });
         }
         return rows;
       }
       case 'generateTagihanBulanan': {
         needAuth(['admin', 'bendahara']);
-        const per = (payload && payload.periode) || currentPeriodeClient();
+        const per = String((payload && payload.periode) || currentPeriodeClient()).trim().substring(0, 7);
         const defNom = Number((payload && payload.nominal_default) || db.settings.nominal_ipl_default || 150000);
         let created = 0;
         db.keluarga.filter(function (k) { return k.status_aktif === 'Aktif' && k.status_hunian !== 'Kosong'; }).forEach(function (kk) {
-          const exists = db.tagihan.some(function (t) { return t.periode === per && t.kk_id === kk.id; });
+          const exists = db.tagihan.some(function (t) { return String(t.periode || '').trim().substring(0, 7) === per && String(t.kk_id) === String(kk.id); });
           if (exists) return;
           const nom = Number(kk.nominal_ipl || defNom);
           db.tagihan.push({
@@ -1762,7 +1767,7 @@
         const u = needAuth();
         const t = db.tagihan.find(function (x) { return x.id === payload.tagihan_id; });
         if (!t) throw new Error('Tagihan tidak ditemukan.');
-        if (u.role === 'warga' && t.kk_id !== u.kk_id) throw new Error('Bukan tagihan rumah tangga Anda.');
+        if (isWargaRole(u, db.settings) && String(t.kk_id) !== String(u.kk_id)) throw new Error('Bukan tagihan rumah tangga Anda.');
         t.status = 'Menunggu Verifikasi';
         t.metode_bayar = payload.metode_bayar || 'Transfer Bank';
         t.rekening_tujuan = t.metode_bayar === 'Transfer Bank' ? String(payload.rekening_tujuan || '').trim() : '';
@@ -1775,7 +1780,7 @@
       }
       case 'submitRapelIpl': {
         const u = needAuth();
-        const isStaff = u.role === 'superadmin' || u.role === 'admin' || u.role === 'bendahara';
+        const isStaff = isFinanceStaff(u, db.settings);
         const targetKkId = isStaff ? String(payload.kk_id || '') : String(u.kk_id || '');
         const kk = db.keluarga.find(function (k) { return String(k.id) === targetKkId; });
         if (!kk) throw new Error('Data Kartu Keluarga tidak ditemukan.');
@@ -3836,14 +3841,17 @@ window.CompFinanceIpl = {
   template: `
     <div>
       <div class="row items-center justify-between q-mb-md q-col-gutter-sm">
-        <div class="col-12 col-md-auto">
+        <div class="col-12 col-xl">
           <div class="text-subtitle1 text-md-h6 text-weight-bold text-grey-9">Tagihan IPL &amp; Upload Bukti Pembayaran</div>
           <div class="text-caption text-grey-6">Pengelolaan Iuran Pemeliharaan Lingkungan (IPL) per rumah tangga dan konfirmasi transfer warga</div>
         </div>
-        <div class="col-12 col-md-auto">
-          <div class="row q-gutter-xs q-gutter-sm-sm">
+        <div class="col-12 col-xl-auto">
+          <div class="row wrap items-center q-gutter-xs">
             <q-btn
               unelevated
+              dense
+              no-caps
+              class="q-px-sm"
               :class="$q.screen.xs ? 'full-width' : ''"
               color="deep-purple-7"
               icon="date_range"
@@ -3853,6 +3861,9 @@ window.CompFinanceIpl = {
             <q-btn
               v-if="canManage"
               unelevated
+              dense
+              no-caps
+              class="q-px-sm"
               :class="$q.screen.xs ? 'col' : ''"
               color="green-7"
               icon="chat"
@@ -3863,6 +3874,9 @@ window.CompFinanceIpl = {
             <q-btn
               v-if="canManage"
               outline
+              dense
+              no-caps
+              class="q-px-sm"
               color="green-8"
               icon="history"
               label="Log WA"
@@ -3871,12 +3885,26 @@ window.CompFinanceIpl = {
             <q-btn
               v-if="canManage"
               unelevated
+              dense
+              no-caps
+              class="q-px-sm"
               :class="$q.screen.xs ? 'full-width' : ''"
               color="teal-8"
               icon="autorenew"
-              label="Generate Tagihan Bulan Ini"
+              label="Generate Tagihan"
               @click="openGenerateDialog"
             />
+            <q-btn
+              outline
+              dense
+              round
+              color="teal-8"
+              icon="refresh"
+              :loading="loading"
+              @click="loadData"
+            >
+              <q-tooltip>Muat ulang daftar tagihan</q-tooltip>
+            </q-btn>
           </div>
         </div>
       </div>
@@ -4072,7 +4100,7 @@ window.CompFinanceIpl = {
             </q-td>
           </template>
           <template #body-cell-actions="props">
-            <q-td :props="props" class="q-gutter-xs">
+            <q-td :props="props" class="q-gutter-xs no-wrap-cell">
               <q-btn
                 v-if="props.row.status === 'Belum Bayar' || props.row.status === 'Ditolak'"
                 unelevated dense size="sm" color="teal-8" icon="upload_file"
@@ -4662,7 +4690,7 @@ window.CompFinanceIpl = {
     </div>
   `,
   setup(props, { emit }) {
-    const { ref, reactive, computed, onMounted } = Vue;
+    const { ref, reactive, computed, watch, onMounted } = Vue;
     const $q = Quasar.useQuasar();
     const canManage = computed(() => SiwargaAPI.isFinanceStaff(props.user, props.settings));
     const loading = ref(false);
@@ -4673,6 +4701,10 @@ window.CompFinanceIpl = {
     const filterStatus = ref('Semua');
     const search = ref('');
     const mobileLimit = ref(20);
+
+    function normYm(v) {
+      return String(v || '').trim().substring(0, 7);
+    }
 
     const genDialog = ref(false);
     const genForm = reactive({ periode: SiwargaAPI.currentPeriode(), nominal_default: 150000 });
@@ -4746,7 +4778,8 @@ window.CompFinanceIpl = {
     const filteredRows = computed(() => {
       const q = (search.value || '').toLowerCase();
       return rows.value.filter(r => {
-        if (filterStatus.value !== 'Semua' && r.status !== filterStatus.value) return false;
+        const st = String(r.status || '').trim();
+        if (filterStatus.value !== 'Semua' && st !== filterStatus.value) return false;
         if (!q) return true;
         return [r.no_rumah, r.kepala_keluarga, r.periode, SiwargaAPI.formatPeriodeID(r.periode)].some(v => String(v || '').toLowerCase().includes(q));
       });
@@ -4823,7 +4856,7 @@ window.CompFinanceIpl = {
       const existingMap = {};
       allHouseBills.value.forEach(b => {
         if (!targetKkId || String(b.kk_id) === targetKkId) {
-          existingMap[String(b.periode)] = b;
+          existingMap[normYm(b.periode)] = b;
         }
       });
       const months = [];
@@ -4847,7 +4880,10 @@ window.CompFinanceIpl = {
     });
 
     const unpaidRows = computed(() =>
-      filteredRows.value.filter(r => r.status === 'Belum Bayar' || r.status === 'Ditolak')
+      filteredRows.value.filter(r => {
+        const st = String(r.status || '').trim();
+        return st === 'Belum Bayar' || st === 'Ditolak';
+      })
     );
 
     const summary = computed(() => {
@@ -4855,9 +4891,10 @@ window.CompFinanceIpl = {
       let countLunas = 0, countPending = 0, countUnpaid = 0;
       filteredRows.value.forEach(r => {
         const nom = Number(r.total || r.nominal || 0);
+        const st = String(r.status || '').trim();
         totalDitagih += nom;
-        if (r.status === 'Lunas') { totalLunas += nom; countLunas++; }
-        else if (r.status === 'Menunggu Verifikasi') { totalPending += nom; countPending++; }
+        if (st === 'Lunas') { totalLunas += nom; countLunas++; }
+        else if (st === 'Menunggu Verifikasi') { totalPending += nom; countPending++; }
         else { totalUnpaid += nom; countUnpaid++; }
       });
       return { totalDitagih, totalLunas, totalPending, totalUnpaid, countLunas, countPending, countUnpaid };
@@ -4943,8 +4980,8 @@ window.CompFinanceIpl = {
         return;
       }
       const unpaid = allHouseBills.value
-        .filter(b => String(b.kk_id) === targetKkId && (b.status === 'Belum Bayar' || b.status === 'Ditolak') && b.periode)
-        .map(b => String(b.periode));
+        .filter(b => String(b.kk_id) === targetKkId && (String(b.status || '').trim() === 'Belum Bayar' || String(b.status || '').trim() === 'Ditolak') && b.periode)
+        .map(b => normYm(b.periode));
       const merged = Array.from(new Set((rapelForm.custom_periods || []).concat(unpaid))).sort();
       rapelForm.custom_periods = merged;
       if (!unpaid.length) {
@@ -5207,6 +5244,12 @@ window.CompFinanceIpl = {
         loadingLogs.value = false;
       }
     }
+
+    watch(() => (props.user ? (props.user.id + ':' + props.user.role) : ''), () => {
+      filterPeriode.value = SiwargaAPI.isWargaRole(props.user, props.settings) ? '' : SiwargaAPI.currentPeriode();
+      filterStatus.value = 'Semua';
+      loadData();
+    });
 
     onMounted(loadData);
 
