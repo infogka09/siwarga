@@ -583,6 +583,10 @@
       border: none !important;
       box-shadow: none !important;
     }
+    .report-sig-col {
+      width: 33.3333% !important;
+      flex: 0 0 33.3333% !important;
+    }
   }
 </style>
 
@@ -765,7 +769,10 @@
 
   const DEFAULT_MENU_CONFIG = {
     _groups: { portal: 'MENU UTAMA', finance: 'SIWARGA FINANCE' },
-    _permissions: { verif_revisi_roles: ['superadmin', 'admin', 'bendahara'] },
+    _permissions: {
+      verif_revisi_roles: ['superadmin', 'admin', 'bendahara'],
+      report_ttd_roles: ['superadmin', 'admin', 'bendahara', 'ketua_rt', 'sekretaris']
+    },
     dashboard: { enabled: true, label: 'Dashboard Utama', roles: ['superadmin', 'admin', 'bendahara', 'warga'] },
     warga: { enabled: true, label: 'Data Warga & Keluarga', roles: ['superadmin', 'admin', 'bendahara', 'warga'] },
     surat: { enabled: true, label: 'Administrasi Surat', roles: ['superadmin', 'admin', 'bendahara', 'warga'] },
@@ -792,7 +799,10 @@
       _permissions: {
         verif_revisi_roles: (parsed._permissions && Array.isArray(parsed._permissions.verif_revisi_roles))
           ? parsed._permissions.verif_revisi_roles.slice()
-          : DEFAULT_MENU_CONFIG._permissions.verif_revisi_roles.slice()
+          : DEFAULT_MENU_CONFIG._permissions.verif_revisi_roles.slice(),
+        report_ttd_roles: (parsed._permissions && Array.isArray(parsed._permissions.report_ttd_roles))
+          ? parsed._permissions.report_ttd_roles.slice()
+          : DEFAULT_MENU_CONFIG._permissions.report_ttd_roles.slice()
       }
     };
     Object.keys(DEFAULT_MENU_CONFIG).forEach(function (key) {
@@ -1317,13 +1327,18 @@
           ? inPerms.verif_revisi_roles.slice()
           : DEFAULT_MENU_CONFIG._permissions.verif_revisi_roles.slice();
         if (revRoles.indexOf('superadmin') === -1) revRoles.unshift('superadmin');
+        const ttdRoles = Array.isArray(inPerms.report_ttd_roles)
+          ? inPerms.report_ttd_roles.slice()
+          : DEFAULT_MENU_CONFIG._permissions.report_ttd_roles.slice();
+        if (ttdRoles.indexOf('superadmin') === -1) ttdRoles.unshift('superadmin');
         const sanitized = {
           _groups: {
             portal: String(inGroups.portal || '').trim() || DEFAULT_MENU_CONFIG._groups.portal,
             finance: String(inGroups.finance || '').trim() || DEFAULT_MENU_CONFIG._groups.finance
           },
           _permissions: {
-            verif_revisi_roles: revRoles
+            verif_revisi_roles: revRoles,
+            report_ttd_roles: ttdRoles
           }
         };
         Object.keys(DEFAULT_MENU_CONFIG).forEach(function (key) {
@@ -2152,6 +2167,41 @@
         saveMockDb(db);
         return { total: targets.length, sent: sent, failed: 0, skippedNoPhone: skippedNoPhone, details: details, message: 'Selesai (Simulasi): ' + sent + ' terkirim, 0 gagal, ' + skippedNoPhone + ' tanpa nomor HP.' };
       }
+      case 'saveReportSignatures': {
+        const u = needAuth();
+        const cfgMenu = parseMenuConfig(db.settings);
+        const allowedTtd = (cfgMenu._permissions && cfgMenu._permissions.report_ttd_roles) || DEFAULT_MENU_CONFIG._permissions.report_ttd_roles;
+        if (u.role !== 'superadmin' && allowedTtd.indexOf(u.role) === -1) {
+          throw new Error('Peran Anda tidak memiliki hak akses untuk mengunggah TTD & Stempel Laporan.');
+        }
+        const slots = [
+          { key: 'ttd_ketua_rt_url', fileKey: 'ttd_ketua_rt_payload', removeKey: 'remove_ttd_ketua_rt' },
+          { key: 'ttd_sekretaris_rt_url', fileKey: 'ttd_sekretaris_rt_payload', removeKey: 'remove_ttd_sekretaris_rt' },
+          { key: 'ttd_bendahara_rt_url', fileKey: 'ttd_bendahara_rt_payload', removeKey: 'remove_ttd_bendahara_rt' },
+          { key: 'stempel_rt_url', fileKey: 'stempel_rt_payload', removeKey: 'remove_stempel_rt' }
+        ];
+        slots.forEach(function (s) {
+          if (payload && payload[s.fileKey] && payload[s.fileKey].base64Data) {
+            db.settings[s.key] = payload[s.fileKey].base64Data;
+          } else if (payload && payload[s.removeKey] === true) {
+            db.settings[s.key] = '';
+          }
+        });
+        if (payload && payload.ketua_rt !== undefined) db.settings.ketua_rt = String(payload.ketua_rt || '').trim();
+        if (payload && payload.sekretaris_rt !== undefined) db.settings.sekretaris_rt = String(payload.sekretaris_rt || '').trim();
+        if (payload && payload.bendahara_rt !== undefined) db.settings.bendahara_rt = String(payload.bendahara_rt || '').trim();
+        saveMockDb(db);
+        return Object.assign({}, db.settings);
+      }
+      case 'getReportSignatureDataUrls': {
+        needAuth();
+        return {
+          ttd_ketua_rt: db.settings.ttd_ketua_rt_url || '',
+          ttd_sekretaris_rt: db.settings.ttd_sekretaris_rt_url || '',
+          ttd_bendahara_rt: db.settings.ttd_bendahara_rt_url || '',
+          stempel_rt: db.settings.stempel_rt_url || ''
+        };
+      }
       default:
         throw new Error('Aksi tidak dikenali: ' + action);
     }
@@ -2172,6 +2222,15 @@
     isFinanceStaff: isFinanceStaff,
     isWargaRole: isWargaRole,
     canAccessMenu: canAccessMenu,
+    canManageReportSignatures: function (user, settingsObj) {
+      if (!user) return false;
+      if (user.role === 'superadmin') return true;
+      const cfg = parseMenuConfig(settingsObj);
+      const allowed = (cfg._permissions && Array.isArray(cfg._permissions.report_ttd_roles))
+        ? cfg._permissions.report_ttd_roles
+        : DEFAULT_MENU_CONFIG._permissions.report_ttd_roles;
+      return allowed.indexOf(user.role) !== -1;
+    },
     parseBankAccounts: parseBankAccounts,
     formatBankInfo: formatBankInfoClient,
     getToken: function () { return localStorage.getItem(TOKEN_KEY) || ''; },
@@ -6528,15 +6587,25 @@ window.CompFinanceKas = {
   <script>
 window.CompFinanceReport = {
   props: ['user', 'settings'],
+  emits: ['settings-updated'],
   template: `
     <div>
       <div class="row items-center justify-between q-mb-md q-col-gutter-sm no-print">
-        <div class="col-12 col-md-auto">
+        <div class="col-12 col-lg">
           <div class="text-subtitle1 text-md-h6 text-weight-bold text-grey-9">Buku Kas &amp; Laporan Keuangan RT</div>
           <div class="text-caption text-grey-6">Buku Kas Umum dengan saldo berjalan (running balance), rekap per pos kategori, ekspor PDF/CSV, dan cetak laporan</div>
         </div>
-        <div class="col-12 col-md-auto">
-          <div class="row q-gutter-xs q-gutter-sm-sm">
+        <div class="col-12 col-lg-auto">
+          <div class="row wrap q-gutter-xs">
+            <q-btn
+              v-if="canManageSignatures"
+              outline
+              no-caps
+              color="deep-purple-7"
+              icon="draw"
+              label="TTD & Stempel"
+              @click="openSigDialog"
+            />
             <q-btn unelevated color="red-7" icon="picture_as_pdf" label="Export PDF" :loading="exportingPdf" @click="exportPdf" />
             <q-btn outline color="teal-8" icon="download" label="Export CSV" @click="exportCsv" />
             <q-btn outline color="grey-8" icon="print" label="Cetak" @click="printReport" />
@@ -6825,29 +6894,328 @@ window.CompFinanceReport = {
           </div>
         </div>
 
-        <!-- Blok Tanda Tangan Resmi -->
-        <div class="row q-mt-xl text-center">
-          <div class="col-6">
-            <div class="text-caption text-grey-7">Mengetahui,</div>
-            <div class="text-body2 text-weight-bold">Ketua {{ settings.nama_rt }}</div>
-            <div style="height: 64px;"></div>
-            <div class="text-body2 text-weight-bold"><u>{{ settings.ketua_rt }}</u></div>
+        <!-- Blok Tanda Tangan Resmi (Ketua RT + Stempel, Sekretaris, Bendahara) -->
+        <div class="q-mt-xl">
+          <div v-if="canManageSignatures" class="row justify-end q-mb-sm no-print">
+            <q-btn
+              flat
+              dense
+              no-caps
+              size="sm"
+              color="deep-purple-7"
+              icon="draw"
+              label="Upload / Atur TTD & Stempel"
+              @click="openSigDialog"
+            />
           </div>
-          <div class="col-6">
-            <div class="text-caption text-grey-7">Disusun oleh,</div>
-            <div class="text-body2 text-weight-bold">Bendahara {{ settings.nama_rt }}</div>
-            <div style="height: 64px;"></div>
-            <div class="text-body2 text-weight-bold"><u>{{ settings.bendahara_rt }}</u></div>
+          <div class="row q-col-gutter-md text-center items-end">
+            <div class="col-12 col-sm-4 report-sig-col">
+              <div class="text-caption text-grey-7">Mengetahui,</div>
+              <div class="text-body2 text-weight-bold">Ketua {{ settings.nama_rt }}</div>
+              <div class="row items-center justify-center relative-position q-my-xs" style="height: 88px;">
+                <img
+                  v-if="settings.stempel_rt_url"
+                  :src="settings.stempel_rt_url"
+                  alt="Stempel RT"
+                  style="position: absolute; left: 50%; top: 50%; transform: translate(-88%, -52%); max-height: 76px; max-width: 76px; object-fit: contain; opacity: 0.85; mix-blend-mode: multiply; pointer-events: none;"
+                />
+                <img
+                  v-if="settings.ttd_ketua_rt_url"
+                  :src="settings.ttd_ketua_rt_url"
+                  alt="TTD Ketua RT"
+                  style="position: relative; z-index: 1; max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
+                />
+              </div>
+              <div class="text-body2 text-weight-bold"><u>{{ settings.ketua_rt || '____________________' }}</u></div>
+            </div>
+
+            <div class="col-12 col-sm-4 report-sig-col">
+              <div class="text-caption text-grey-7">Mengetahui,</div>
+              <div class="text-body2 text-weight-bold">Sekretaris {{ settings.nama_rt }}</div>
+              <div class="row items-center justify-center relative-position q-my-xs" style="height: 88px;">
+                <img
+                  v-if="settings.ttd_sekretaris_rt_url"
+                  :src="settings.ttd_sekretaris_rt_url"
+                  alt="TTD Sekretaris RT"
+                  style="max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
+                />
+              </div>
+              <div class="text-body2 text-weight-bold"><u>{{ settings.sekretaris_rt || '____________________' }}</u></div>
+            </div>
+
+            <div class="col-12 col-sm-4 report-sig-col">
+              <div class="text-caption text-grey-7">Disusun oleh,</div>
+              <div class="text-body2 text-weight-bold">Bendahara {{ settings.nama_rt }}</div>
+              <div class="row items-center justify-center relative-position q-my-xs" style="height: 88px;">
+                <img
+                  v-if="settings.ttd_bendahara_rt_url"
+                  :src="settings.ttd_bendahara_rt_url"
+                  alt="TTD Bendahara RT"
+                  style="max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
+                />
+              </div>
+              <div class="text-body2 text-weight-bold"><u>{{ settings.bendahara_rt || '____________________' }}</u></div>
+            </div>
           </div>
         </div>
       </q-card>
+
+      <!-- Dialog Upload TTD Ketua RT, Sekretaris, Bendahara & Stempel -->
+      <q-dialog v-model="sigDialog" persistent>
+        <q-card style="width: 780px; max-width: 96vw;">
+          <q-card-section class="bg-deep-purple-8 text-white row items-center justify-between">
+            <div>
+              <div class="text-subtitle1 text-weight-bold">Upload Tanda Tangan &amp; Stempel Laporan</div>
+              <div class="text-caption text-purple-2">Gambar TTD &amp; stempel otomatis muncul di tampilan Laporan, Cetak, dan Export PDF (disarankan PNG latar transparan)</div>
+            </div>
+            <q-btn flat round dense icon="close" v-close-popup :disable="savingSig" />
+          </q-card-section>
+
+          <q-card-section class="scroll" style="max-height: 76vh;">
+            <div class="row q-col-gutter-md">
+              <div v-for="slot in sigSlots" :key="slot.key" class="col-12 col-sm-6">
+                <div class="q-pa-sm rounded-borders bg-grey-1 full-height column justify-between" style="border: 1px solid #cbd5e1;">
+                  <div>
+                    <div class="row items-center justify-between q-mb-xs">
+                      <div class="text-subtitle2 text-weight-bold text-grey-9">{{ slot.label }}</div>
+                      <q-badge v-if="sigDraft[slot.key].payload" color="teal-8">Siap Simpan</q-badge>
+                      <q-badge v-else-if="sigDraft[slot.key].removed" color="negative">Akan Dihapus</q-badge>
+                      <q-badge v-else-if="settings[slot.urlKey]" color="positive">Terpasang</q-badge>
+                      <q-badge v-else color="grey-5">Kosong</q-badge>
+                    </div>
+                    <div class="text-caption text-grey-6 q-mb-sm">{{ slot.hint }}</div>
+
+                    <!-- Preview Box -->
+                    <div
+                      class="row items-center justify-center rounded-borders q-pa-sm q-mb-sm"
+                      style="height: 110px; background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 14px 14px; border: 1px dashed #94a3b8;"
+                    >
+                      <img
+                        v-if="sigSlotPreview(slot)"
+                        :src="sigSlotPreview(slot)"
+                        :alt="slot.label"
+                        style="max-height: 92px; max-width: 100%; object-fit: contain;"
+                      />
+                      <div v-else class="text-caption text-grey-5 text-center">
+                        <q-icon :name="slot.icon" size="26px" /><br />Belum ada gambar
+                      </div>
+                    </div>
+
+                    <q-input
+                      v-if="slot.nameKey"
+                      v-model="sigNames[slot.nameKey]"
+                      outlined dense
+                      bg-color="white"
+                      class="q-mb-sm"
+                      :label="'Nama ' + slot.roleTitle"
+                    />
+                  </div>
+
+                  <div class="row items-center justify-between q-gutter-xs">
+                    <q-btn
+                      outline
+                      dense
+                      no-caps
+                      size="sm"
+                      color="deep-purple-7"
+                      icon="upload_file"
+                      :label="sigSlotPreview(slot) ? 'Ganti Gambar' : 'Pilih Gambar'"
+                      @click="triggerSigFile(slot.key)"
+                    />
+                    <q-btn
+                      v-if="sigSlotPreview(slot)"
+                      flat
+                      dense
+                      no-caps
+                      size="sm"
+                      color="negative"
+                      icon="delete_outline"
+                      label="Hapus"
+                      @click="markRemoveSig(slot.key)"
+                    />
+                    <input
+                      :id="'sig-input-' + slot.key"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      style="display: none;"
+                      @change="onPickSigFile(slot.key, $event)"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </q-card-section>
+
+          <q-separator />
+          <q-card-actions align="right" class="q-pa-md">
+            <q-btn flat label="Batal" v-close-popup :disable="savingSig" />
+            <q-btn unelevated color="deep-purple-8" icon="save" label="Simpan TTD & Stempel" :loading="savingSig" @click="saveSignatures" />
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
     </div>
   `,
-  setup(props) {
+  setup(props, { emit }) {
     const { ref, reactive, computed, onMounted } = Vue;
     const $q = Quasar.useQuasar();
     const loading = ref(false);
     const exportingPdf = ref(false);
+    const canManageSignatures = computed(() => SiwargaAPI.canManageReportSignatures(props.user, props.settings));
+    const sigDialog = ref(false);
+    const savingSig = ref(false);
+
+    const sigSlots = [
+      { key: 'ketua', urlKey: 'ttd_ketua_rt_url', payloadKey: 'ttd_ketua_rt_payload', removeKey: 'remove_ttd_ketua_rt', nameKey: 'ketua_rt', roleTitle: 'Ketua RT', label: 'TTD Ketua RT', icon: 'draw', hint: 'Tanda tangan Ketua RT (disarankan PNG transparan)' },
+      { key: 'sekretaris', urlKey: 'ttd_sekretaris_rt_url', payloadKey: 'ttd_sekretaris_rt_payload', removeKey: 'remove_ttd_sekretaris_rt', nameKey: 'sekretaris_rt', roleTitle: 'Sekretaris RT', label: 'TTD Sekretaris RT', icon: 'draw', hint: 'Tanda tangan Sekretaris RT (disarankan PNG transparan)' },
+      { key: 'bendahara', urlKey: 'ttd_bendahara_rt_url', payloadKey: 'ttd_bendahara_rt_payload', removeKey: 'remove_ttd_bendahara_rt', nameKey: 'bendahara_rt', roleTitle: 'Bendahara RT', label: 'TTD Bendahara RT', icon: 'draw', hint: 'Tanda tangan Bendahara RT (disarankan PNG transparan)' },
+      { key: 'stempel', urlKey: 'stempel_rt_url', payloadKey: 'stempel_rt_payload', removeKey: 'remove_stempel_rt', nameKey: '', roleTitle: 'Stempel', label: 'Stempel Resmi RT', icon: 'approval', hint: 'Stempel RT otomatis ditempatkan di area tanda tangan Ketua RT' }
+    ];
+
+    const sigNames = reactive({ ketua_rt: '', sekretaris_rt: '', bendahara_rt: '' });
+    const sigDraft = reactive({
+      ketua: { payload: null, preview: '', removed: false },
+      sekretaris: { payload: null, preview: '', removed: false },
+      bendahara: { payload: null, preview: '', removed: false },
+      stempel: { payload: null, preview: '', removed: false }
+    });
+
+    function openSigDialog() {
+      sigNames.ketua_rt = (props.settings && props.settings.ketua_rt) || '';
+      sigNames.sekretaris_rt = (props.settings && props.settings.sekretaris_rt) || '';
+      sigNames.bendahara_rt = (props.settings && props.settings.bendahara_rt) || '';
+      sigSlots.forEach(s => {
+        sigDraft[s.key].payload = null;
+        sigDraft[s.key].preview = '';
+        sigDraft[s.key].removed = false;
+      });
+      sigDialog.value = true;
+    }
+
+    function sigSlotPreview(slot) {
+      const d = sigDraft[slot.key];
+      if (d.removed) return '';
+      if (d.preview) return d.preview;
+      return (props.settings && props.settings[slot.urlKey]) || '';
+    }
+
+    function triggerSigFile(slotKey) {
+      const el = document.getElementById('sig-input-' + slotKey);
+      if (el) {
+        el.value = '';
+        el.click();
+      }
+    }
+
+    function resizeSignatureImage(file) {
+      return new Promise((resolve, reject) => {
+        if (!file) return resolve(null);
+        if (!file.type || !file.type.startsWith('image/')) {
+          return reject(new Error('File harus berupa gambar (PNG, JPG, atau WEBP).'));
+        }
+        if (file.size > 8 * 1024 * 1024) {
+          return reject(new Error('Ukuran file maksimal 8 MB.'));
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+        reader.onload = () => {
+          const dataUrl = reader.result;
+          const img = new Image();
+          img.onerror = () => resolve({
+            fileName: file.name || 'ttd.png',
+            mimeType: file.type || 'image/png',
+            base64Data: dataUrl
+          });
+          img.onload = () => {
+            try {
+              const maxDim = 600;
+              let w = img.naturalWidth || img.width;
+              let h = img.naturalHeight || img.height;
+              if (w > maxDim || h > maxDim) {
+                if (w >= h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              const keepAlpha = file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/gif';
+              if (!keepAlpha) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, w, h);
+              }
+              ctx.drawImage(img, 0, 0, w, h);
+              const outMime = keepAlpha ? 'image/png' : 'image/jpeg';
+              const outUrl = keepAlpha ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.88);
+              const baseName = (file.name || 'ttd').replace(/\.[^.]+$/, '');
+              resolve({
+                fileName: baseName + (keepAlpha ? '.png' : '.jpg'),
+                mimeType: outMime,
+                base64Data: outUrl
+              });
+            } catch (e) {
+              resolve({
+                fileName: file.name || 'ttd.png',
+                mimeType: file.type || 'image/png',
+                base64Data: dataUrl
+              });
+            }
+          };
+          img.src = dataUrl;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function onPickSigFile(slotKey, evt) {
+      const files = evt && evt.target && evt.target.files;
+      const file = files && files[0];
+      if (!file) return;
+      try {
+        const prepared = await resizeSignatureImage(file);
+        if (prepared && prepared.base64Data) {
+          sigDraft[slotKey].payload = prepared;
+          sigDraft[slotKey].preview = prepared.base64Data;
+          sigDraft[slotKey].removed = false;
+        }
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message || 'Gagal memproses gambar.' });
+      }
+    }
+
+    function markRemoveSig(slotKey) {
+      sigDraft[slotKey].payload = null;
+      sigDraft[slotKey].preview = '';
+      sigDraft[slotKey].removed = true;
+    }
+
+    async function saveSignatures() {
+      savingSig.value = true;
+      try {
+        const payload = {
+          ketua_rt: sigNames.ketua_rt,
+          sekretaris_rt: sigNames.sekretaris_rt,
+          bendahara_rt: sigNames.bendahara_rt
+        };
+        sigSlots.forEach(s => {
+          const d = sigDraft[s.key];
+          if (d.payload) payload[s.payloadKey] = d.payload;
+          else if (d.removed) payload[s.removeKey] = true;
+        });
+        const updated = await SiwargaAPI.call('saveReportSignatures', payload);
+        emit('settings-updated', updated);
+        sigDialog.value = false;
+        $q.notify({ type: 'positive', message: 'TTD & Stempel laporan berhasil disimpan!' });
+      } catch (err) {
+        $q.notify({ type: 'negative', message: err.message });
+      } finally {
+        savingSig.value = false;
+      }
+    }
     const currentYm = SiwargaAPI.currentPeriode();
     const filterMode = ref('month');
     const selectedPeriode = ref(currentYm);
@@ -7156,30 +7524,78 @@ window.CompFinanceReport = {
           }
         });
 
-        // Blok Tanda Tangan Resmi (cegah terpotong antar halaman)
-        let sigY = doc.lastAutoTable.finalY + 14;
-        if (sigY > pageH - 42) {
+        // Blok Tanda Tangan Resmi 3 Kolom (Ketua RT + Stempel, Sekretaris, Bendahara)
+        let sigY = doc.lastAutoTable.finalY + 12;
+        if (sigY > pageH - 48) {
           doc.addPage();
-          sigY = 24;
+          sigY = 22;
         }
-        const leftX = margin + contentW * 0.25;
-        const rightX = margin + contentW * 0.75;
+
+        let sigImgs = { ttd_ketua_rt: '', ttd_sekretaris_rt: '', ttd_bendahara_rt: '', stempel_rt: '' };
+        if (cfg.ttd_ketua_rt_url || cfg.ttd_sekretaris_rt_url || cfg.ttd_bendahara_rt_url || cfg.stempel_rt_url) {
+          try {
+            const fetched = await SiwargaAPI.call('getReportSignatureDataUrls');
+            if (fetched && typeof fetched === 'object') sigImgs = fetched;
+          } catch (e) {}
+        }
+
+        function addSigImageFit(dataUrl, centerX, topY, maxW, maxH) {
+          if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.indexOf('data:image/') !== 0) return;
+          try {
+            const propsImg = doc.getImageProperties(dataUrl);
+            const ratio = (propsImg.width || 1) / (propsImg.height || 1);
+            let drawW = maxW;
+            let drawH = drawW / ratio;
+            if (drawH > maxH) {
+              drawH = maxH;
+              drawW = drawH * ratio;
+            }
+            const fmt = dataUrl.indexOf('image/jpeg') !== -1 || dataUrl.indexOf('image/jpg') !== -1 ? 'JPEG' : 'PNG';
+            doc.addImage(dataUrl, fmt, centerX - drawW / 2, topY + (maxH - drawH) / 2, drawW, drawH);
+          } catch (e) {}
+        }
+
+        const col1X = margin + contentW * (1 / 6);
+        const col2X = margin + contentW * (3 / 6);
+        const col3X = margin + contentW * (5 / 6);
+
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         doc.setTextColor(71, 85, 105);
-        doc.text('Mengetahui,', leftX, sigY, { align: 'center' });
-        doc.text('Disusun oleh,', rightX, sigY, { align: 'center' });
+        doc.text('Mengetahui,', col1X, sigY, { align: 'center' });
+        doc.text('Mengetahui,', col2X, sigY, { align: 'center' });
+        doc.text('Disusun oleh,', col3X, sigY, { align: 'center' });
+
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(30, 41, 59);
-        doc.text('Ketua ' + namaRt, leftX, sigY + 5, { align: 'center' });
-        doc.text('Bendahara ' + namaRt, rightX, sigY + 5, { align: 'center' });
+        doc.text('Ketua ' + namaRt, col1X, sigY + 4.8, { align: 'center' });
+        doc.text('Sekretaris ' + namaRt, col2X, sigY + 4.8, { align: 'center' });
+        doc.text('Bendahara ' + namaRt, col3X, sigY + 4.8, { align: 'center' });
 
-        const nameY = sigY + 24;
-        doc.text(cfg.ketua_rt || '____________________', leftX, nameY, { align: 'center' });
-        doc.text(cfg.bendahara_rt || '____________________', rightX, nameY, { align: 'center' });
+        // Tempelkan stempel RT (sedikit di kiri area TTD Ketua RT) dan gambar TTD masing-masing
+        const imgTopY = sigY + 6.5;
+        if (sigImgs.stempel_rt) {
+          addSigImageFit(sigImgs.stempel_rt, col1X - 11, imgTopY, 20, 20);
+        }
+        if (sigImgs.ttd_ketua_rt) {
+          addSigImageFit(sigImgs.ttd_ketua_rt, col1X + 2, imgTopY, 34, 19);
+        }
+        if (sigImgs.ttd_sekretaris_rt) {
+          addSigImageFit(sigImgs.ttd_sekretaris_rt, col2X, imgTopY, 34, 19);
+        }
+        if (sigImgs.ttd_bendahara_rt) {
+          addSigImageFit(sigImgs.ttd_bendahara_rt, col3X, imgTopY, 34, 19);
+        }
+
+        const nameY = sigY + 29;
+        doc.setFontSize(8.5);
+        doc.text(cfg.ketua_rt || '____________________', col1X, nameY, { align: 'center' });
+        doc.text(cfg.sekretaris_rt || '____________________', col2X, nameY, { align: 'center' });
+        doc.text(cfg.bendahara_rt || '____________________', col3X, nameY, { align: 'center' });
         doc.setDrawColor(30, 41, 59);
-        doc.line(leftX - 24, nameY + 1, leftX + 24, nameY + 1);
-        doc.line(rightX - 24, nameY + 1, rightX + 24, nameY + 1);
+        doc.line(col1X - 22, nameY + 1, col1X + 22, nameY + 1);
+        doc.line(col2X - 22, nameY + 1, col2X + 22, nameY + 1);
+        doc.line(col3X - 22, nameY + 1, col3X + 22, nameY + 1);
 
         // Footer nomor halaman di setiap halaman
         const totalPages = doc.internal.getNumberOfPages();
@@ -7231,7 +7647,9 @@ window.CompFinanceReport = {
     onMounted(loadReport);
 
     return {
-      loading, exportingPdf, currentYm, filterMode, selectedPeriode, periodeOptions, activePeriodLabel,
+      loading, exportingPdf, canManageSignatures, sigDialog, savingSig, sigSlots, sigNames, sigDraft,
+      openSigDialog, sigSlotPreview, triggerSigFile, onPickSigFile, markRemoveSig, saveSignatures,
+      currentYm, filterMode, selectedPeriode, periodeOptions, activePeriodLabel,
       filters, report, ledgerColumns, loadReport, onChangeFilterMode, shiftMonth, goCurrentMonth, selectRecapMonth,
       resetFilters, printReport, exportPdf, exportCsv, formatFuturePeriods,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
@@ -7351,6 +7769,36 @@ window.CompSettings = {
                 <q-checkbox dense size="sm" :model-value="true" disable label="Superadmin (Selalu Aktif)" color="deep-purple-8" />
                 <q-checkbox dense size="sm" v-model="menuState._permissions.verif_revisi_roles" val="admin" label="Admin / Ketua RT" color="teal-8" />
                 <q-checkbox dense size="sm" v-model="menuState._permissions.verif_revisi_roles" val="bendahara" label="Bendahara RT" color="indigo-8" />
+              </div>
+            </div>
+
+            <!-- Hak Akses Khusus Upload TTD & Stempel Laporan Keuangan -->
+            <div class="q-pa-md rounded-borders q-mb-md" style="background: #f5f3ff; border: 1px solid #ddd6fe;">
+              <div class="text-subtitle2 text-weight-bold text-deep-purple-9 q-mb-xs">Hak Akses Upload TTD &amp; Stempel Laporan</div>
+              <div class="text-caption text-grey-8 q-mb-sm">
+                Tentukan peran yang boleh mengunggah / mengubah <strong>TTD Ketua RT, Sekretaris, Bendahara, dan Stempel RT</strong> di menu <strong>Laporan</strong> (Superadmin selalu diizinkan):
+              </div>
+              <div class="row wrap items-center q-gutter-md">
+                <q-checkbox dense size="sm" :model-value="true" disable label="Superadmin (Selalu Aktif)" color="deep-purple-8" />
+                <q-checkbox dense size="sm" v-model="menuState._permissions.report_ttd_roles" val="admin" label="Admin RT" color="teal-8" />
+                <q-checkbox dense size="sm" v-model="menuState._permissions.report_ttd_roles" val="bendahara" label="Bendahara RT" color="indigo-8" />
+              </div>
+              <div v-if="customRoles.length" class="row wrap items-center q-gutter-xs q-mt-sm">
+                <span class="text-caption text-grey-7 q-mr-xs">Peran kustom:</span>
+                <q-chip
+                  v-for="cr in customRoles"
+                  :key="'ttd-' + cr.code"
+                  dense
+                  clickable
+                  size="sm"
+                  :outline="!isReportTtdRoleAllowed(cr.code)"
+                  :color="isReportTtdRoleAllowed(cr.code) ? (cr.color || 'deep-purple-7') : 'grey-5'"
+                  :text-color="isReportTtdRoleAllowed(cr.code) ? 'white' : 'grey-7'"
+                  :icon="isReportTtdRoleAllowed(cr.code) ? 'check' : 'block'"
+                  @click="toggleReportTtdRole(cr.code)"
+                >
+                  {{ cr.label }}
+                </q-chip>
               </div>
             </div>
 
@@ -8313,6 +8761,24 @@ window.CompSettings = {
       $q.notify({ type: 'info', message: 'Seluruh menu diatur ke default aktif. Klik Simpan untuk menerapkan.' });
     }
 
+    function isReportTtdRoleAllowed(roleCode) {
+      const list = (menuState._permissions && Array.isArray(menuState._permissions.report_ttd_roles))
+        ? menuState._permissions.report_ttd_roles
+        : [];
+      return list.indexOf(roleCode) !== -1;
+    }
+
+    function toggleReportTtdRole(roleCode) {
+      if (!menuState._permissions) menuState._permissions = {};
+      if (!Array.isArray(menuState._permissions.report_ttd_roles)) {
+        menuState._permissions.report_ttd_roles = ['superadmin', 'admin', 'bendahara', 'ketua_rt', 'sekretaris'];
+      }
+      const list = menuState._permissions.report_ttd_roles;
+      const idx = list.indexOf(roleCode);
+      if (idx === -1) list.push(roleCode);
+      else list.splice(idx, 1);
+    }
+
     async function saveMenuConfig() {
       savingMenus.value = true;
       try {
@@ -8324,7 +8790,10 @@ window.CompSettings = {
           _permissions: {
             verif_revisi_roles: (menuState._permissions && Array.isArray(menuState._permissions.verif_revisi_roles))
               ? menuState._permissions.verif_revisi_roles.slice()
-              : ['superadmin', 'admin', 'bendahara']
+              : ['superadmin', 'admin', 'bendahara'],
+            report_ttd_roles: (menuState._permissions && Array.isArray(menuState._permissions.report_ttd_roles))
+              ? menuState._permissions.report_ttd_roles.slice()
+              : ['superadmin', 'admin', 'bendahara', 'ketua_rt', 'sekretaris']
           }
         };
         Object.keys(menuState).forEach(k => {
@@ -8513,7 +8982,7 @@ window.CompSettings = {
       isSuperadmin, roleOptions, filterRoleOptions, customRoles, roleManagerDialog, savingRoles,
       editingRoleCode, roleDraft, baseRoleOptions, roleColorOptions,
       getRoleBadgeColor, getRoleBadgeLabel, isWargaBaseRole, baseRoleShortLabel,
-      isCustomRoleAllowed, toggleCustomRoleMenu, openRoleManager, resetRoleDraft,
+      isCustomRoleAllowed, toggleCustomRoleMenu, isReportTtdRoleAllowed, toggleReportTtdRole, openRoleManager, resetRoleDraft,
       startEditRole, addOrUpdateRoleDraft, removeCustomRole, restoreDefaultCustomRoles, saveCustomRoles,
       tab, saving, savingMenus, form, bankAccounts, menuState, menuGroups,
       logoFile, logoPreview, showWaToken, testWaPhone, testingWa, upgradingPwds, impersonatingId,
@@ -9881,6 +10350,7 @@ window.CompProfile = {
               v-else-if="activePage === 'finance_report'"
               :user="currentUser"
               :settings="settings"
+              @settings-updated="onSettingsUpdated"
             />
             <comp-settings
               v-else-if="activePage === 'settings'"
@@ -9970,6 +10440,10 @@ window.CompProfile = {
           ketua_rt: '',
           sekretaris_rt: '',
           bendahara_rt: '',
+          ttd_ketua_rt_url: '',
+          ttd_sekretaris_rt_url: '',
+          ttd_bendahara_rt_url: '',
+          stempel_rt_url: '',
           nominal_ipl_default: '150000',
           bank_nama: '',
           bank_norek: '',
