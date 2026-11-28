@@ -5150,7 +5150,7 @@ window.CompFinanceVerif = {
           </q-tab-panel>
 
           <q-tab-panel name="history" class="q-pa-md">
-            <q-table flat bordered :rows="historyList" :columns="histColumns" row-key="id" :pagination="{ rowsPerPage: 10 }">
+            <q-table flat bordered :rows="historyList" :columns="histColumns" :row-key="row => row._row_num || row.id" :pagination="{ rowsPerPage: 10 }">
               <template #body-cell-periode="props">
                 <q-td :props="props">
                   <span>{{ formatPeriodeID(props.row.periode) }}</span>
@@ -5284,7 +5284,7 @@ window.CompFinanceVerif = {
       return allowed.indexOf(props.user.role) !== -1 || allowed.indexOf(eff) !== -1;
     });
 
-    const pendingList = computed(() => allRows.value.filter(r => r.status === 'Menunggu Verifikasi'));
+    const pendingList = computed(() => allRows.value.filter(r => String(r.status || '').trim() === 'Menunggu Verifikasi'));
     const pendingCards = computed(() => {
       const grouped = {};
       const singles = [];
@@ -5322,7 +5322,10 @@ window.CompFinanceVerif = {
       });
       return cards;
     });
-    const historyList = computed(() => allRows.value.filter(r => r.status === 'Lunas' || r.status === 'Ditolak'));
+    const historyList = computed(() => allRows.value.filter(r => {
+      const s = String(r.status || '').trim().toLowerCase();
+      return s === 'lunas' || s === 'ditolak';
+    }));
 
     const histColumns = [
       { name: 'periode', label: 'Periode', field: 'periode', align: 'left', sortable: true, format: val => SiwargaAPI.formatPeriodeID(val) },
@@ -5365,6 +5368,10 @@ window.CompFinanceVerif = {
       try {
         const res = await SiwargaAPI.call('verifyIplPayment', {
           tagihan_id: selectedItem.value.id,
+          row_num: selectedItem.value._row_num || 0,
+          no_rumah: selectedItem.value.no_rumah || '',
+          periode: selectedItem.value.periode || '',
+          kk_id: selectedItem.value.kk_id || '',
           batch_id: selectedItem.value.isBatch ? selectedItem.value.batch_id : (actionType.value === 'revert' && selectedItem.value.batch_id ? selectedItem.value.batch_id : ''),
           action: actionType.value,
           target_status: revertTargetStatus.value,
@@ -5385,9 +5392,13 @@ window.CompFinanceVerif = {
         if (actionType.value === 'revert' && revertTargetStatus.value === 'Menunggu Verifikasi') {
           tab.value = 'pending';
         }
-        loadData();
+        await loadData();
       } catch (err) {
         $q.notify({ type: 'negative', message: err.message });
+        // Muat ulang otomatis agar tampilan selalu sinkron jika status di server sudah berubah
+        if (err && err.message && /berstatus|direvisi|verifikasi/i.test(err.message)) {
+          loadData();
+        }
       } finally {
         saving.value = false;
       }
