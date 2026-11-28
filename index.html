@@ -5078,14 +5078,30 @@ window.CompFinanceVerif = {
 
         <q-tab-panels v-model="tab" animated>
           <q-tab-panel name="pending" class="q-pa-md">
+            <div v-if="pendingCards.length" class="row q-col-gutter-sm q-mb-md">
+              <div class="col-12 col-sm-6">
+                <q-input
+                  v-model="searchPending"
+                  outlined dense clearable
+                  placeholder="Cari no. rumah, nama warga, periode (11-2026), atau catatan..."
+                >
+                  <template #prepend><q-icon name="search" /></template>
+                </q-input>
+              </div>
+            </div>
+
             <div v-if="!pendingCards.length" class="text-center q-pa-xl text-grey-6">
               <q-icon name="verified" size="48px" color="teal-3" />
               <div class="text-subtitle1 text-weight-bold text-grey-8 q-mt-sm">Semua pembayaran sudah diverifikasi!</div>
               <div class="text-caption">Tidak ada antrean bukti transfer yang menunggu saat ini.</div>
             </div>
 
+            <div v-else-if="!filteredPendingCards.length" class="text-center q-pa-lg text-grey-6 bg-grey-1 rounded-borders">
+              Tidak ada antrean verifikasi yang cocok dengan pencarian "{{ searchPending }}".
+            </div>
+
             <div v-else class="row q-col-gutter-md">
-              <div v-for="item in pendingCards" :key="item.cardKey" class="col-12 col-md-6">
+              <div v-for="item in filteredPendingCards" :key="item.cardKey" class="col-12 col-md-6">
                 <q-card flat bordered :style="item.isBatch ? 'border-radius: 12px; border-left: 4px solid #6d28d9;' : 'border-radius: 12px; border-left: 4px solid #f59e0b;'">
                   <q-card-section>
                     <div class="row items-start justify-between">
@@ -5150,7 +5166,40 @@ window.CompFinanceVerif = {
           </q-tab-panel>
 
           <q-tab-panel name="history" class="q-pa-md">
-            <q-table flat bordered :rows="historyList" :columns="histColumns" :row-key="row => row._row_num || row.id" :pagination="{ rowsPerPage: 10 }">
+            <div class="row q-col-gutter-sm q-mb-md items-center">
+              <div class="col-12 col-sm-6">
+                <q-input
+                  v-model="searchHistory"
+                  outlined dense clearable
+                  placeholder="Cari no. rumah, nama warga, periode (11-2026), verifikator, atau catatan..."
+                >
+                  <template #prepend><q-icon name="search" /></template>
+                </q-input>
+              </div>
+              <div class="col-6 col-sm-3">
+                <q-select
+                  v-model="filterHistoryPeriode"
+                  :options="historyPeriodeOptions"
+                  option-value="value"
+                  option-label="label"
+                  emit-value map-options
+                  outlined dense
+                  label="Filter Periode"
+                />
+              </div>
+              <div class="col-6 col-sm-3">
+                <q-select
+                  v-model="filterHistoryStatus"
+                  :options="['Semua', 'Lunas', 'Ditolak']"
+                  outlined dense
+                  label="Filter Hasil"
+                />
+              </div>
+            </div>
+            <div v-if="searchHistory || filterHistoryPeriode || filterHistoryStatus !== 'Semua'" class="text-caption text-grey-7 q-mb-sm">
+              Menampilkan <strong>{{ filteredHistoryList.length }}</strong> dari {{ historyList.length }} riwayat verifikasi
+            </div>
+            <q-table flat bordered :rows="filteredHistoryList" :columns="histColumns" :row-key="row => row._row_num || row.id" :pagination="{ rowsPerPage: 15 }">
               <template #body-cell-periode="props">
                 <q-td :props="props">
                   <span>{{ formatPeriodeID(props.row.periode) }}</span>
@@ -5267,6 +5316,10 @@ window.CompFinanceVerif = {
     const loading = ref(false);
     const saving = ref(false);
     const allRows = ref([]);
+    const searchPending = ref('');
+    const searchHistory = ref('');
+    const filterHistoryStatus = ref('Semua');
+    const filterHistoryPeriode = ref('');
     const actionDialog = ref(false);
     const actionType = ref('approve');
     const selectedItem = ref({});
@@ -5322,20 +5375,73 @@ window.CompFinanceVerif = {
       });
       return cards;
     });
+    const filteredPendingCards = computed(() => {
+      const q = String(searchPending.value || '').trim().toLowerCase();
+      if (!q) return pendingCards.value;
+      return pendingCards.value.filter(item => {
+        const fields = [
+          item.no_rumah,
+          item.kepala_keluarga,
+          item.periode,
+          SiwargaAPI.formatPeriodeID(item.periode),
+          item.periodeLabel,
+          item.rekening_tujuan,
+          item.metode_bayar,
+          item.catatan_warga,
+          item.catatan_bendahara
+        ];
+        return fields.some(v => String(v || '').toLowerCase().includes(q));
+      });
+    });
+
     const historyList = computed(() => allRows.value.filter(r => {
       const s = String(r.status || '').trim().toLowerCase();
       return s === 'lunas' || s === 'ditolak';
     }));
 
+    const historyPeriodeOptions = computed(() => {
+      const set = {};
+      historyList.value.forEach(r => {
+        if (r.periode) set[String(r.periode)] = true;
+      });
+      const list = Object.keys(set).sort().reverse().map(ym => ({
+        value: ym,
+        label: SiwargaAPI.formatPeriodeID(ym)
+      }));
+      return [{ value: '', label: 'Semua Periode' }].concat(list);
+    });
+
+    const filteredHistoryList = computed(() => {
+      const q = String(searchHistory.value || '').trim().toLowerCase();
+      return historyList.value.filter(r => {
+        if (filterHistoryStatus.value !== 'Semua' && String(r.status || '').trim() !== filterHistoryStatus.value) return false;
+        if (filterHistoryPeriode.value && String(r.periode || '').trim() !== filterHistoryPeriode.value) return false;
+        if (!q) return true;
+        const fields = [
+          r.no_rumah,
+          r.kepala_keluarga,
+          r.periode,
+          SiwargaAPI.formatPeriodeID(r.periode),
+          r.rekening_tujuan,
+          r.metode_bayar,
+          r.diverifikasi_oleh,
+          r.catatan_bendahara,
+          r.status,
+          SiwargaAPI.formatDateID(r.tanggal_verifikasi)
+        ];
+        return fields.some(v => String(v || '').toLowerCase().includes(q));
+      });
+    });
+
     const histColumns = [
       { name: 'periode', label: 'Periode', field: 'periode', align: 'left', sortable: true, format: val => SiwargaAPI.formatPeriodeID(val) },
-      { name: 'no_rumah', label: 'Rumah', field: 'no_rumah', align: 'left' },
-      { name: 'kepala_keluarga', label: 'Warga', field: 'kepala_keluarga', align: 'left' },
+      { name: 'no_rumah', label: 'Rumah', field: 'no_rumah', align: 'left', sortable: true },
+      { name: 'kepala_keluarga', label: 'Warga', field: 'kepala_keluarga', align: 'left', sortable: true },
       { name: 'rekening_tujuan', label: 'Rekening Tujuan', field: 'rekening_tujuan', align: 'left' },
-      { name: 'total', label: 'Nominal', field: 'total', align: 'right' },
-      { name: 'status', label: 'Hasil', field: 'status', align: 'center' },
+      { name: 'total', label: 'Nominal', field: 'total', align: 'right', sortable: true },
+      { name: 'status', label: 'Hasil', field: 'status', align: 'center', sortable: true },
       { name: 'diverifikasi_oleh', label: 'Verifikator', field: 'diverifikasi_oleh', align: 'left' },
-      { name: 'tanggal_verifikasi', label: 'Tanggal', field: 'tanggal_verifikasi', align: 'center', format: val => SiwargaAPI.formatDateID(val) },
+      { name: 'tanggal_verifikasi', label: 'Tanggal', field: 'tanggal_verifikasi', align: 'center', sortable: true, format: val => SiwargaAPI.formatDateID(val) },
       { name: 'catatan_bendahara', label: 'Catatan', field: 'catatan_bendahara', align: 'left' },
       { name: 'actions', label: 'Aksi', field: 'id', align: 'right' }
     ];
@@ -5407,7 +5513,9 @@ window.CompFinanceVerif = {
     onMounted(loadData);
 
     return {
-      tab, loading, saving, canRevert, pendingList, pendingCards, historyList, histColumns,
+      tab, loading, saving, canRevert, pendingList, pendingCards, filteredPendingCards,
+      historyList, filteredHistoryList, historyPeriodeOptions, histColumns,
+      searchPending, searchHistory, filterHistoryStatus, filterHistoryPeriode,
       actionDialog, actionType, selectedItem, catatanBendahara, revertTargetStatus,
       loadData, openActionDialog, submitVerify,
       formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID
