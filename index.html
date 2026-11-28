@@ -378,8 +378,35 @@
   }
 
   .page-wrapper {
-    max-width: 1320px;
+    width: 100%;
+    max-width: 100%;
     margin: 0 auto;
+  }
+
+  /* Tabel desktop lega & rapi tanpa scroll horizontal */
+  .q-table {
+    width: 100%;
+  }
+
+  .q-table thead tr th {
+    padding: 8px 10px;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 700;
+    background-color: #f8fafc;
+  }
+
+  .q-table tbody td {
+    padding: 8px 10px;
+    white-space: normal !important;
+    word-break: break-word;
+    line-height: 1.4;
+    font-size: 13px;
+    vertical-align: middle;
+  }
+
+  .q-table tbody td.no-wrap-cell {
+    white-space: nowrap !important;
   }
 
   .stat-card {
@@ -4017,7 +4044,7 @@ window.CompFinanceIpl = {
         </div>
 
         <!-- Tampilan Laptop / Tablet (Tabel Lengkap) -->
-        <q-table v-else flat bordered :rows="filteredRows" :columns="columns" row-key="id" :loading="loading" :pagination="{ rowsPerPage: 15 }">
+        <q-table v-else flat bordered wrap-cells :rows="filteredRows" :columns="columns" row-key="id" :loading="loading" :pagination="{ rowsPerPage: 15 }">
           <template #body-cell-periode="props">
             <q-td :props="props">
               <span class="text-weight-medium">{{ formatPeriodeID(props.row.periode) }}</span>
@@ -5286,26 +5313,29 @@ window.CompFinanceVerif = {
             <div v-if="searchHistory || filterHistoryPeriode || filterHistoryStatus !== 'Semua'" class="text-caption text-grey-7 q-mb-sm">
               Menampilkan <strong>{{ filteredHistoryList.length }}</strong> dari {{ historyList.length }} riwayat verifikasi
             </div>
-            <q-table flat bordered :rows="filteredHistoryList" :columns="histColumns" :row-key="row => row._row_num || row.id" :pagination="{ rowsPerPage: 15 }">
+            <q-table flat bordered wrap-cells :rows="filteredHistoryList" :columns="histColumns" :row-key="row => row._row_num || row.id" :pagination="{ rowsPerPage: 15 }">
               <template #body-cell-periode="props">
-                <q-td :props="props">
+                <q-td :props="props" class="no-wrap-cell">
                   <span>{{ formatPeriodeID(props.row.periode) }}</span>
                   <q-badge v-if="props.row.batch_id" color="deep-purple-7" class="q-ml-xs" style="font-size:10px">Rapel</q-badge>
                 </q-td>
               </template>
               <template #body-cell-rekening_tujuan="props">
-                <q-td :props="props" class="mono-num text-caption">
+                <q-td :props="props" class="text-caption">
                   <span v-if="props.row.rekening_tujuan" class="text-teal-9 text-weight-medium">{{ props.row.rekening_tujuan }}</span>
                   <span v-else class="text-grey-7">{{ props.row.metode_bayar || '-' }}</span>
                 </q-td>
               </template>
               <template #body-cell-total="props">
-                <q-td :props="props" class="mono-num text-weight-bold">{{ formatRupiah(props.row.total) }}</q-td>
+                <q-td :props="props" class="mono-num no-wrap-cell text-weight-bold">{{ formatRupiah(props.row.total) }}</q-td>
               </template>
               <template #body-cell-status="props">
-                <q-td :props="props">
+                <q-td :props="props" class="no-wrap-cell">
                   <q-badge :color="props.row.status === 'Lunas' ? 'positive' : 'negative'">{{ props.row.status }}</q-badge>
                 </q-td>
+              </template>
+              <template #body-cell-tanggal_verifikasi="props">
+                <q-td :props="props" class="no-wrap-cell">{{ formatDateID(props.row.tanggal_verifikasi) }}</q-td>
               </template>
               <template #body-cell-actions="props">
                 <q-td :props="props" class="text-right q-gutter-xs" style="white-space: nowrap;">
@@ -5853,19 +5883,24 @@ window.CompFinanceKas = {
         </div>
 
         <!-- Tampilan Tabel Lengkap untuk Laptop / Desktop -->
-        <q-table v-else flat bordered :rows="filteredRows" :columns="columns" row-key="id" :loading="loading" :pagination="{ rowsPerPage: 12 }">
+        <q-table v-else flat bordered wrap-cells :rows="filteredRows" :columns="columns" row-key="id" :loading="loading" :pagination="{ rowsPerPage: 12 }">
+          <template #body-cell-tanggal="props">
+            <q-td :props="props" class="no-wrap-cell">
+              {{ formatDateID(props.row.tanggal) }}
+            </q-td>
+          </template>
           <template #body-cell-tipe="props">
-            <q-td :props="props">
+            <q-td :props="props" class="no-wrap-cell">
               <q-badge :color="props.row.tipe === 'Masuk' ? 'positive' : 'deep-orange-7'">{{ props.row.tipe }}</q-badge>
             </q-td>
           </template>
           <template #body-cell-nominal="props">
-            <q-td :props="props" class="mono-num text-weight-bold" :class="props.row.tipe === 'Masuk' ? 'text-positive' : 'text-negative'">
+            <q-td :props="props" class="mono-num no-wrap-cell text-weight-bold" :class="props.row.tipe === 'Masuk' ? 'text-positive' : 'text-negative'">
               {{ props.row.tipe === 'Masuk' ? '+' : '-' }} {{ formatRupiah(props.row.nominal) }}
             </q-td>
           </template>
           <template #body-cell-actions="props">
-            <q-td :props="props" class="q-gutter-xs">
+            <q-td :props="props" class="no-wrap-cell q-gutter-xs">
               <q-btn v-if="props.row.bukti_url" flat dense round icon="receipt" color="teal-8" @click="viewBukti(props.row)"><q-tooltip>Lihat Kwitansi</q-tooltip></q-btn>
               <q-btn v-if="canManage && !props.row.referensi_id" flat dense round icon="edit" color="indigo-7" @click="openForm(props.row.tipe, props.row)" />
               <q-btn v-if="canManage && !props.row.referensi_id" flat dense round icon="delete" color="negative" @click="deleteTx(props.row)" />
@@ -6454,6 +6489,7 @@ window.CompFinanceReport = {
           <q-table
             flat
             bordered
+            wrap-cells
             :rows="report.ledger"
             :columns="ledgerColumns"
             row-key="id"
@@ -6461,24 +6497,27 @@ window.CompFinanceReport = {
             :rows-per-page-options="[0]"
             hide-pagination
           >
+            <template #body-cell-tanggal="props">
+              <q-td :props="props" class="no-wrap-cell">{{ formatDateID(props.row.tanggal) }}</q-td>
+            </template>
             <template #top-row>
               <q-tr class="bg-grey-1 text-weight-bold">
                 <q-td colspan="5">Saldo Awal Periode</q-td>
-                <q-td class="text-right mono-num">{{ formatRupiah(report.saldoAwalPeriode) }}</q-td>
+                <q-td class="text-right mono-num no-wrap-cell">{{ formatRupiah(report.saldoAwalPeriode) }}</q-td>
               </q-tr>
             </template>
             <template #body-cell-debit="props">
-              <q-td :props="props" class="mono-num text-positive text-weight-medium">
+              <q-td :props="props" class="mono-num no-wrap-cell text-positive text-weight-medium">
                 {{ props.row.debit > 0 ? formatRupiah(props.row.debit) : '-' }}
               </q-td>
             </template>
             <template #body-cell-kredit="props">
-              <q-td :props="props" class="mono-num text-negative text-weight-medium">
+              <q-td :props="props" class="mono-num no-wrap-cell text-negative text-weight-medium">
                 {{ props.row.kredit > 0 ? formatRupiah(props.row.kredit) : '-' }}
               </q-td>
             </template>
             <template #body-cell-saldo_berjalan="props">
-              <q-td :props="props" class="mono-num text-weight-bold text-teal-10">
+              <q-td :props="props" class="mono-num no-wrap-cell text-weight-bold text-teal-10">
                 {{ formatRupiah(props.row.saldo_berjalan) }}
               </q-td>
             </template>
@@ -7368,7 +7407,7 @@ window.CompSettings = {
             </div>
 
             <!-- Tampilan Desktop Table -->
-            <q-table v-else flat bordered :rows="filteredUsers" :columns="userColumns" row-key="id" :loading="loadingUsers" v-model:pagination="userPagination">
+            <q-table v-else flat bordered wrap-cells :rows="filteredUsers" :columns="userColumns" row-key="id" :loading="loadingUsers" v-model:pagination="userPagination">
               <template #body-cell-role="props">
                 <q-td :props="props">
                   <q-badge :color="getRoleBadgeColor(props.row.role)">
@@ -9012,7 +9051,7 @@ window.CompProfile = {
       </q-drawer>
 
       <q-page-container>
-        <q-page class="q-pa-sm q-pa-md-lg">
+        <q-page class="q-pa-sm q-pa-md-md">
           <div class="page-wrapper">
             <!-- Banner Mode Login As (Impersonation) -->
             <q-banner
