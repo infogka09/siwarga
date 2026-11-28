@@ -6915,90 +6915,66 @@ window.CompFinanceReport = {
             />
           </div>
 
-          <!-- Baris 1: Sekretaris 1 & 2 (Kiri) dan Bendahara 1 & 2 (Kanan) -->
-          <div class="row q-col-gutter-md text-center items-start">
-            <div class="col-12 col-sm-6 report-sig-half">
+          <!-- Baris 1: Sekretaris (Kiri) & Bendahara (Kanan) — 1 blok jabatan, mendukung 1 atau 2 TTD berdampingan -->
+          <div class="row q-col-gutter-md text-center items-end">
+            <div class="col-6 report-sig-half">
               <div class="text-caption text-grey-7">Diperiksa oleh,</div>
-              <div v-if="hasSekretaris2" class="row q-col-gutter-sm items-end">
-                <div class="col-6">
-                  <div class="text-body2 text-weight-bold">Sekretaris 1 {{ settings.nama_rt }}</div>
-                  <div class="row items-center justify-center relative-position q-my-xs" style="height: 82px;">
-                    <img
-                      v-if="settings.ttd_sekretaris_rt_url"
-                      :src="settings.ttd_sekretaris_rt_url"
-                      alt="TTD Sekretaris 1 RT"
-                      style="max-height: 72px; max-width: 145px; object-fit: contain; mix-blend-mode: multiply;"
-                    />
-                  </div>
-                  <div class="text-body2 text-weight-bold"><u>{{ settings.sekretaris_rt || '________________' }}</u></div>
-                </div>
-                <div class="col-6">
-                  <div class="text-body2 text-weight-bold">Sekretaris 2 {{ settings.nama_rt }}</div>
-                  <div class="row items-center justify-center relative-position q-my-xs" style="height: 82px;">
-                    <img
-                      v-if="settings.ttd_sekretaris2_rt_url"
-                      :src="settings.ttd_sekretaris2_rt_url"
-                      alt="TTD Sekretaris 2 RT"
-                      style="max-height: 72px; max-width: 145px; object-fit: contain; mix-blend-mode: multiply;"
-                    />
-                  </div>
-                  <div class="text-body2 text-weight-bold"><u>{{ settings.sekretaris2_rt || '________________' }}</u></div>
-                </div>
+              <div class="text-body2 text-weight-bold">Sekretaris {{ settings.nama_rt }}</div>
+              <div class="row items-center justify-center no-wrap q-gutter-sm q-my-xs" style="height: 84px;">
+                <img
+                  v-if="settings.ttd_sekretaris_rt_url"
+                  :src="settings.ttd_sekretaris_rt_url"
+                  alt="TTD Sekretaris 1 RT"
+                  :style="{
+                    maxHeight: '74px',
+                    maxWidth: (settings.ttd_sekretaris_rt_url && settings.ttd_sekretaris2_rt_url) ? '125px' : '170px',
+                    objectFit: 'contain',
+                    mixBlendMode: 'multiply'
+                  }"
+                />
+                <img
+                  v-if="settings.ttd_sekretaris2_rt_url"
+                  :src="settings.ttd_sekretaris2_rt_url"
+                  alt="TTD Sekretaris 2 RT"
+                  :style="{
+                    maxHeight: '74px',
+                    maxWidth: (settings.ttd_sekretaris_rt_url && settings.ttd_sekretaris2_rt_url) ? '125px' : '170px',
+                    objectFit: 'contain',
+                    mixBlendMode: 'multiply'
+                  }"
+                />
               </div>
-              <div v-else>
-                <div class="text-body2 text-weight-bold">Sekretaris {{ settings.nama_rt }}</div>
-                <div class="row items-center justify-center relative-position q-my-xs" style="height: 84px;">
-                  <img
-                    v-if="settings.ttd_sekretaris_rt_url"
-                    :src="settings.ttd_sekretaris_rt_url"
-                    alt="TTD Sekretaris RT"
-                    style="max-height: 74px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
-                  />
-                </div>
-                <div class="text-body2 text-weight-bold"><u>{{ settings.sekretaris_rt || '____________________' }}</u></div>
-              </div>
+              <div class="text-body2 text-weight-bold"><u>{{ combinedSekretarisName }}</u></div>
             </div>
 
-            <div class="col-12 col-sm-6 report-sig-half">
+            <div class="col-6 report-sig-half">
               <div class="text-caption text-grey-7">Disusun oleh,</div>
-              <div v-if="hasBendahara2" class="row q-col-gutter-sm items-end">
-                <div class="col-6">
-                  <div class="text-body2 text-weight-bold">Bendahara 1 {{ settings.nama_rt }}</div>
-                  <div class="row items-center justify-center relative-position q-my-xs" style="height: 82px;">
-                    <img
-                      v-if="settings.ttd_bendahara_rt_url"
-                      :src="settings.ttd_bendahara_rt_url"
-                      alt="TTD Bendahara 1 RT"
-                      style="max-height: 72px; max-width: 145px; object-fit: contain; mix-blend-mode: multiply;"
-                    />
-                  </div>
-                  <div class="text-body2 text-weight-bold"><u>{{ settings.bendahara_rt || '________________' }}</u></div>
-                </div>
-                <div class="col-6">
-                  <div class="text-body2 text-weight-bold">Bendahara 2 {{ settings.nama_rt }}</div>
-                  <div class="row items-center justify-center relative-position q-my-xs" style="height: 82px;">
-                    <img
-                      v-if="settings.ttd_bendahara2_rt_url"
-                      :src="settings.ttd_bendahara2_rt_url"
-                      alt="TTD Bendahara 2 RT"
-                      style="max-height: 72px; max-width: 145px; object-fit: contain; mix-blend-mode: multiply;"
-                    />
-                  </div>
-                  <div class="text-body2 text-weight-bold"><u>{{ settings.bendahara2_rt || '________________' }}</u></div>
-                </div>
+              <div class="text-body2 text-weight-bold">Bendahara {{ settings.nama_rt }}</div>
+              <div class="row items-center justify-center no-wrap q-gutter-sm q-my-xs" style="height: 84px;">
+                <img
+                  v-if="settings.ttd_bendahara_rt_url"
+                  :src="settings.ttd_bendahara_rt_url"
+                  alt="TTD Bendahara 1 RT"
+                  :style="{
+                    maxHeight: '74px',
+                    maxWidth: (settings.ttd_bendahara_rt_url && settings.ttd_bendahara2_rt_url) ? '125px' : '170px',
+                    objectFit: 'contain',
+                    mixBlendMode: 'multiply'
+                  }"
+                />
+                <img
+                  v-if="settings.ttd_bendahara2_rt_url"
+                  :src="settings.ttd_bendahara2_rt_url"
+                  alt="TTD Bendahara 2 RT"
+                  :style="{
+                    maxHeight: '74px',
+                    maxWidth: (settings.ttd_bendahara_rt_url && settings.ttd_bendahara2_rt_url) ? '125px' : '170px',
+                    objectFit: 'contain',
+                    mixBlendMode: 'multiply'
+                  }"
+                />
               </div>
-              <div v-else>
-                <div class="text-body2 text-weight-bold">Bendahara {{ settings.nama_rt }}</div>
-                <div class="row items-center justify-center relative-position q-my-xs" style="height: 84px;">
-                  <img
-                    v-if="settings.ttd_bendahara_rt_url"
-                    :src="settings.ttd_bendahara_rt_url"
-                    alt="TTD Bendahara RT"
-                    style="max-height: 74px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
-                  />
-                </div>
-                <div class="text-body2 text-weight-bold"><u>{{ settings.bendahara_rt || '____________________' }}</u></div>
-              </div>
+              <div class="text-body2 text-weight-bold"><u>{{ combinedBendaharaName }}</u></div>
             </div>
           </div>
 
@@ -7140,8 +7116,19 @@ window.CompFinanceReport = {
       { key: 'bendahara2', urlKey: 'ttd_bendahara2_rt_url', payloadKey: 'ttd_bendahara2_rt_payload', removeKey: 'remove_ttd_bendahara2_rt', nameKey: 'bendahara2_rt', roleTitle: 'Bendahara 2 (Opsional)', label: 'TTD Bendahara 2', icon: 'draw', hint: 'Isi jika ada Bendahara 2; kosongkan jika hanya 1 Bendahara' }
     ];
 
-    const hasSekretaris2 = computed(() => Boolean(props.settings && (props.settings.sekretaris2_rt || props.settings.ttd_sekretaris2_rt_url)));
-    const hasBendahara2 = computed(() => Boolean(props.settings && (props.settings.bendahara2_rt || props.settings.ttd_bendahara2_rt_url)));
+    function formatCombinedName(n1, n2) {
+      const a = String(n1 || '').trim().replace(/\s*&\s*$/, '');
+      const b = String(n2 || '').trim().replace(/^\s*&\s*/, '');
+      if (a && b) return a + ' & ' + b;
+      return a || b || '____________________';
+    }
+
+    const combinedSekretarisName = computed(() =>
+      formatCombinedName(props.settings && props.settings.sekretaris_rt, props.settings && props.settings.sekretaris2_rt)
+    );
+    const combinedBendaharaName = computed(() =>
+      formatCombinedName(props.settings && props.settings.bendahara_rt, props.settings && props.settings.bendahara2_rt)
+    );
 
     const sigNames = reactive({ ketua_rt: '', sekretaris_rt: '', sekretaris2_rt: '', bendahara_rt: '', bendahara2_rt: '' });
     const sigDraft = reactive({
@@ -7636,10 +7623,8 @@ window.CompFinanceReport = {
         const leftX = margin + contentW * 0.25;
         const rightX = margin + contentW * 0.75;
         const centerX = pageW / 2;
-        const pdfHasSek2 = Boolean(cfg.sekretaris2_rt || sigImgs.ttd_sekretaris2_rt);
-        const pdfHasBen2 = Boolean(cfg.bendahara2_rt || sigImgs.ttd_bendahara2_rt);
 
-        // Baris 1: Sekretaris 1 & 2 (Kiri) dan Bendahara 1 & 2 (Kanan)
+        // Baris 1: Sekretaris (Kiri) & Bendahara (Kanan) — 1 blok jabatan, mendukung 1 atau 2 gambar TTD berdampingan
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
         doc.setTextColor(71, 85, 105);
@@ -7649,48 +7634,39 @@ window.CompFinanceReport = {
         const imgRow1Y = sigY + 6.5;
         const nameRow1Y = sigY + 28.5;
         doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
         doc.setTextColor(30, 41, 59);
         doc.setDrawColor(30, 41, 59);
 
-        if (pdfHasSek2) {
-          const s1X = margin + contentW * 0.12;
-          const s2X = margin + contentW * 0.37;
-          doc.setFontSize(8);
-          doc.text('Sekretaris 1', s1X, sigY + 4.8, { align: 'center' });
-          doc.text('Sekretaris 2', s2X, sigY + 4.8, { align: 'center' });
-          if (sigImgs.ttd_sekretaris_rt) addSigImageFit(sigImgs.ttd_sekretaris_rt, s1X, imgRow1Y, 30, 18);
-          if (sigImgs.ttd_sekretaris2_rt) addSigImageFit(sigImgs.ttd_sekretaris2_rt, s2X, imgRow1Y, 30, 18);
-          doc.text(cfg.sekretaris_rt || '______________', s1X, nameRow1Y, { align: 'center' });
-          doc.text(cfg.sekretaris2_rt || '______________', s2X, nameRow1Y, { align: 'center' });
-          doc.line(s1X - 18, nameRow1Y + 1, s1X + 18, nameRow1Y + 1);
-          doc.line(s2X - 18, nameRow1Y + 1, s2X + 18, nameRow1Y + 1);
-        } else {
-          doc.setFontSize(8.5);
-          doc.text('Sekretaris ' + namaRt, leftX, sigY + 4.8, { align: 'center' });
-          if (sigImgs.ttd_sekretaris_rt) addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX, imgRow1Y, 36, 19);
-          doc.text(cfg.sekretaris_rt || '____________________', leftX, nameRow1Y, { align: 'center' });
-          doc.line(leftX - 25, nameRow1Y + 1, leftX + 25, nameRow1Y + 1);
+        doc.text('Sekretaris ' + namaRt, leftX, sigY + 4.8, { align: 'center' });
+        doc.text('Bendahara ' + namaRt, rightX, sigY + 4.8, { align: 'center' });
+
+        if (sigImgs.ttd_sekretaris_rt && sigImgs.ttd_sekretaris2_rt) {
+          addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX - 16, imgRow1Y, 28, 18);
+          addSigImageFit(sigImgs.ttd_sekretaris2_rt, leftX + 16, imgRow1Y, 28, 18);
+        } else if (sigImgs.ttd_sekretaris_rt) {
+          addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX, imgRow1Y, 36, 19);
+        } else if (sigImgs.ttd_sekretaris2_rt) {
+          addSigImageFit(sigImgs.ttd_sekretaris2_rt, leftX, imgRow1Y, 36, 19);
         }
 
-        if (pdfHasBen2) {
-          const b1X = margin + contentW * 0.63;
-          const b2X = margin + contentW * 0.88;
-          doc.setFontSize(8);
-          doc.text('Bendahara 1', b1X, sigY + 4.8, { align: 'center' });
-          doc.text('Bendahara 2', b2X, sigY + 4.8, { align: 'center' });
-          if (sigImgs.ttd_bendahara_rt) addSigImageFit(sigImgs.ttd_bendahara_rt, b1X, imgRow1Y, 30, 18);
-          if (sigImgs.ttd_bendahara2_rt) addSigImageFit(sigImgs.ttd_bendahara2_rt, b2X, imgRow1Y, 30, 18);
-          doc.text(cfg.bendahara_rt || '______________', b1X, nameRow1Y, { align: 'center' });
-          doc.text(cfg.bendahara2_rt || '______________', b2X, nameRow1Y, { align: 'center' });
-          doc.line(b1X - 18, nameRow1Y + 1, b1X + 18, nameRow1Y + 1);
-          doc.line(b2X - 18, nameRow1Y + 1, b2X + 18, nameRow1Y + 1);
-        } else {
-          doc.setFontSize(8.5);
-          doc.text('Bendahara ' + namaRt, rightX, sigY + 4.8, { align: 'center' });
-          if (sigImgs.ttd_bendahara_rt) addSigImageFit(sigImgs.ttd_bendahara_rt, rightX, imgRow1Y, 36, 19);
-          doc.text(cfg.bendahara_rt || '____________________', rightX, nameRow1Y, { align: 'center' });
-          doc.line(rightX - 25, nameRow1Y + 1, rightX + 25, nameRow1Y + 1);
+        if (sigImgs.ttd_bendahara_rt && sigImgs.ttd_bendahara2_rt) {
+          addSigImageFit(sigImgs.ttd_bendahara_rt, rightX - 16, imgRow1Y, 28, 18);
+          addSigImageFit(sigImgs.ttd_bendahara2_rt, rightX + 16, imgRow1Y, 28, 18);
+        } else if (sigImgs.ttd_bendahara_rt) {
+          addSigImageFit(sigImgs.ttd_bendahara_rt, rightX, imgRow1Y, 36, 19);
+        } else if (sigImgs.ttd_bendahara2_rt) {
+          addSigImageFit(sigImgs.ttd_bendahara2_rt, rightX, imgRow1Y, 36, 19);
         }
+
+        const sekDisplay = formatCombinedName(cfg.sekretaris_rt, cfg.sekretaris2_rt);
+        const benDisplay = formatCombinedName(cfg.bendahara_rt, cfg.bendahara2_rt);
+        doc.text(sekDisplay, leftX, nameRow1Y, { align: 'center' });
+        doc.text(benDisplay, rightX, nameRow1Y, { align: 'center' });
+        const sekHalfW = Math.max(24, Math.min(38, doc.getTextWidth(sekDisplay) / 2 + 2));
+        const benHalfW = Math.max(24, Math.min(38, doc.getTextWidth(benDisplay) / 2 + 2));
+        doc.line(leftX - sekHalfW, nameRow1Y + 1, leftX + sekHalfW, nameRow1Y + 1);
+        doc.line(rightX - benHalfW, nameRow1Y + 1, rightX + benHalfW, nameRow1Y + 1);
 
         // Baris 2: Mengetahui, Ketua RT (Tengah Bawah + Stempel di Sisi Kiri TTD)
         const sigRow2Y = nameRow1Y + 10;
@@ -7766,7 +7742,7 @@ window.CompFinanceReport = {
     onMounted(loadReport);
 
     return {
-      loading, exportingPdf, canManageSignatures, sigDialog, savingSig, sigSlots, sigNames, sigDraft, hasSekretaris2, hasBendahara2,
+      loading, exportingPdf, canManageSignatures, sigDialog, savingSig, sigSlots, sigNames, sigDraft, combinedSekretarisName, combinedBendaharaName,
       openSigDialog, sigSlotPreview, triggerSigFile, onPickSigFile, markRemoveSig, saveSignatures,
       currentYm, filterMode, selectedPeriode, periodeOptions, activePeriodLabel,
       filters, report, ledgerColumns, loadReport, onChangeFilterMode, shiftMonth, goCurrentMonth, selectRecapMonth,
