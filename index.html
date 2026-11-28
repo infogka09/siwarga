@@ -583,9 +583,9 @@
       border: none !important;
       box-shadow: none !important;
     }
-    .report-sig-col {
-      width: 33.3333% !important;
-      flex: 0 0 33.3333% !important;
+    .report-sig-half {
+      width: 50% !important;
+      flex: 0 0 50% !important;
     }
   }
 </style>
@@ -6894,7 +6894,7 @@ window.CompFinanceReport = {
           </div>
         </div>
 
-        <!-- Blok Tanda Tangan Resmi (Ketua RT + Stempel, Sekretaris, Bendahara) -->
+        <!-- Blok Tanda Tangan Resmi (Sesuai Tata Naskah Dinas: Sekretaris Kiri, Bendahara Kanan, Mengetahui Ketua RT Tengah Bawah) -->
         <div class="q-mt-xl">
           <div v-if="canManageSignatures" class="row justify-end q-mb-sm no-print">
             <q-btn
@@ -6908,8 +6908,41 @@ window.CompFinanceReport = {
               @click="openSigDialog"
             />
           </div>
+
+          <!-- Baris 1: Sekretaris (Kiri) & Bendahara (Kanan) -->
           <div class="row q-col-gutter-md text-center items-end">
-            <div class="col-12 col-sm-4 report-sig-col">
+            <div class="col-6 report-sig-half">
+              <div class="text-caption text-grey-7">Diperiksa oleh,</div>
+              <div class="text-body2 text-weight-bold">Sekretaris {{ settings.nama_rt }}</div>
+              <div class="row items-center justify-center relative-position q-my-xs" style="height: 84px;">
+                <img
+                  v-if="settings.ttd_sekretaris_rt_url"
+                  :src="settings.ttd_sekretaris_rt_url"
+                  alt="TTD Sekretaris RT"
+                  style="max-height: 74px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
+                />
+              </div>
+              <div class="text-body2 text-weight-bold"><u>{{ settings.sekretaris_rt || '____________________' }}</u></div>
+            </div>
+
+            <div class="col-6 report-sig-half">
+              <div class="text-caption text-grey-7">Disusun oleh,</div>
+              <div class="text-body2 text-weight-bold">Bendahara {{ settings.nama_rt }}</div>
+              <div class="row items-center justify-center relative-position q-my-xs" style="height: 84px;">
+                <img
+                  v-if="settings.ttd_bendahara_rt_url"
+                  :src="settings.ttd_bendahara_rt_url"
+                  alt="TTD Bendahara RT"
+                  style="max-height: 74px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
+                />
+              </div>
+              <div class="text-body2 text-weight-bold"><u>{{ settings.bendahara_rt || '____________________' }}</u></div>
+            </div>
+          </div>
+
+          <!-- Baris 2: Mengetahui, Ketua RT (Tengah Bawah + Stempel di Sisi Kiri TTD) -->
+          <div class="row justify-center text-center q-mt-lg">
+            <div class="col-12 col-sm-6">
               <div class="text-caption text-grey-7">Mengetahui,</div>
               <div class="text-body2 text-weight-bold">Ketua {{ settings.nama_rt }}</div>
               <div class="row items-center justify-center relative-position q-my-xs" style="height: 88px;">
@@ -6917,44 +6950,16 @@ window.CompFinanceReport = {
                   v-if="settings.stempel_rt_url"
                   :src="settings.stempel_rt_url"
                   alt="Stempel RT"
-                  style="position: absolute; left: 50%; top: 50%; transform: translate(-88%, -52%); max-height: 76px; max-width: 76px; object-fit: contain; opacity: 0.85; mix-blend-mode: multiply; pointer-events: none;"
+                  style="position: absolute; left: 50%; top: 50%; transform: translate(-102%, -50%); max-height: 76px; max-width: 84px; object-fit: contain; opacity: 0.85; mix-blend-mode: multiply; pointer-events: none;"
                 />
                 <img
                   v-if="settings.ttd_ketua_rt_url"
                   :src="settings.ttd_ketua_rt_url"
                   alt="TTD Ketua RT"
-                  style="position: relative; z-index: 1; max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
+                  style="position: relative; z-index: 1; max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply; margin-left: 18px;"
                 />
               </div>
               <div class="text-body2 text-weight-bold"><u>{{ settings.ketua_rt || '____________________' }}</u></div>
-            </div>
-
-            <div class="col-12 col-sm-4 report-sig-col">
-              <div class="text-caption text-grey-7">Mengetahui,</div>
-              <div class="text-body2 text-weight-bold">Sekretaris {{ settings.nama_rt }}</div>
-              <div class="row items-center justify-center relative-position q-my-xs" style="height: 88px;">
-                <img
-                  v-if="settings.ttd_sekretaris_rt_url"
-                  :src="settings.ttd_sekretaris_rt_url"
-                  alt="TTD Sekretaris RT"
-                  style="max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
-                />
-              </div>
-              <div class="text-body2 text-weight-bold"><u>{{ settings.sekretaris_rt || '____________________' }}</u></div>
-            </div>
-
-            <div class="col-12 col-sm-4 report-sig-col">
-              <div class="text-caption text-grey-7">Disusun oleh,</div>
-              <div class="text-body2 text-weight-bold">Bendahara {{ settings.nama_rt }}</div>
-              <div class="row items-center justify-center relative-position q-my-xs" style="height: 88px;">
-                <img
-                  v-if="settings.ttd_bendahara_rt_url"
-                  :src="settings.ttd_bendahara_rt_url"
-                  alt="TTD Bendahara RT"
-                  style="max-height: 76px; max-width: 170px; object-fit: contain; mix-blend-mode: multiply;"
-                />
-              </div>
-              <div class="text-body2 text-weight-bold"><u>{{ settings.bendahara_rt || '____________________' }}</u></div>
             </div>
           </div>
         </div>
@@ -7524,11 +7529,11 @@ window.CompFinanceReport = {
           }
         });
 
-        // Blok Tanda Tangan Resmi 3 Kolom (Ketua RT + Stempel, Sekretaris, Bendahara)
+        // Blok Tanda Tangan Resmi (Tata Naskah Dinas: Baris 1 Sekretaris Kiri & Bendahara Kanan, Baris 2 Mengetahui Ketua RT Tengah Bawah + Stempel)
         let sigY = doc.lastAutoTable.finalY + 12;
-        if (sigY > pageH - 48) {
+        if (sigY > pageH - 82) {
           doc.addPage();
-          sigY = 22;
+          sigY = 20;
         }
 
         let sigImgs = { ttd_ketua_rt: '', ttd_sekretaris_rt: '', ttd_bendahara_rt: '', stempel_rt: '' };
@@ -7555,47 +7560,61 @@ window.CompFinanceReport = {
           } catch (e) {}
         }
 
-        const col1X = margin + contentW * (1 / 6);
-        const col2X = margin + contentW * (3 / 6);
-        const col3X = margin + contentW * (5 / 6);
+        const leftX = margin + contentW * 0.25;
+        const rightX = margin + contentW * 0.75;
+        const centerX = pageW / 2;
 
+        // Baris 1: Sekretaris (Kiri) & Bendahara (Kanan)
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
         doc.setTextColor(71, 85, 105);
-        doc.text('Mengetahui,', col1X, sigY, { align: 'center' });
-        doc.text('Mengetahui,', col2X, sigY, { align: 'center' });
-        doc.text('Disusun oleh,', col3X, sigY, { align: 'center' });
+        doc.text('Diperiksa oleh,', leftX, sigY, { align: 'center' });
+        doc.text('Disusun oleh,', rightX, sigY, { align: 'center' });
 
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(30, 41, 59);
-        doc.text('Ketua ' + namaRt, col1X, sigY + 4.8, { align: 'center' });
-        doc.text('Sekretaris ' + namaRt, col2X, sigY + 4.8, { align: 'center' });
-        doc.text('Bendahara ' + namaRt, col3X, sigY + 4.8, { align: 'center' });
+        doc.text('Sekretaris ' + namaRt, leftX, sigY + 4.8, { align: 'center' });
+        doc.text('Bendahara ' + namaRt, rightX, sigY + 4.8, { align: 'center' });
 
-        // Tempelkan stempel RT (sedikit di kiri area TTD Ketua RT) dan gambar TTD masing-masing
-        const imgTopY = sigY + 6.5;
-        if (sigImgs.stempel_rt) {
-          addSigImageFit(sigImgs.stempel_rt, col1X - 11, imgTopY, 20, 20);
-        }
-        if (sigImgs.ttd_ketua_rt) {
-          addSigImageFit(sigImgs.ttd_ketua_rt, col1X + 2, imgTopY, 34, 19);
-        }
+        const imgRow1Y = sigY + 6.5;
         if (sigImgs.ttd_sekretaris_rt) {
-          addSigImageFit(sigImgs.ttd_sekretaris_rt, col2X, imgTopY, 34, 19);
+          addSigImageFit(sigImgs.ttd_sekretaris_rt, leftX, imgRow1Y, 36, 19);
         }
         if (sigImgs.ttd_bendahara_rt) {
-          addSigImageFit(sigImgs.ttd_bendahara_rt, col3X, imgTopY, 34, 19);
+          addSigImageFit(sigImgs.ttd_bendahara_rt, rightX, imgRow1Y, 36, 19);
         }
 
-        const nameY = sigY + 29;
+        const nameRow1Y = sigY + 28.5;
         doc.setFontSize(8.5);
-        doc.text(cfg.ketua_rt || '____________________', col1X, nameY, { align: 'center' });
-        doc.text(cfg.sekretaris_rt || '____________________', col2X, nameY, { align: 'center' });
-        doc.text(cfg.bendahara_rt || '____________________', col3X, nameY, { align: 'center' });
+        doc.text(cfg.sekretaris_rt || '____________________', leftX, nameRow1Y, { align: 'center' });
+        doc.text(cfg.bendahara_rt || '____________________', rightX, nameRow1Y, { align: 'center' });
         doc.setDrawColor(30, 41, 59);
-        doc.line(col1X - 22, nameY + 1, col1X + 22, nameY + 1);
-        doc.line(col2X - 22, nameY + 1, col2X + 22, nameY + 1);
-        doc.line(col3X - 22, nameY + 1, col3X + 22, nameY + 1);
+        doc.line(leftX - 25, nameRow1Y + 1, leftX + 25, nameRow1Y + 1);
+        doc.line(rightX - 25, nameRow1Y + 1, rightX + 25, nameRow1Y + 1);
+
+        // Baris 2: Mengetahui, Ketua RT (Tengah Bawah + Stempel di Sisi Kiri TTD)
+        const sigRow2Y = nameRow1Y + 10;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text('Mengetahui,', centerX, sigRow2Y, { align: 'center' });
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        doc.text('Ketua ' + namaRt, centerX, sigRow2Y + 4.8, { align: 'center' });
+
+        const imgRow2Y = sigRow2Y + 6.5;
+        if (sigImgs.stempel_rt) {
+          addSigImageFit(sigImgs.stempel_rt, centerX - 15, imgRow2Y, 22, 20);
+        }
+        if (sigImgs.ttd_ketua_rt) {
+          addSigImageFit(sigImgs.ttd_ketua_rt, centerX + 4, imgRow2Y, 36, 19);
+        }
+
+        const nameRow2Y = sigRow2Y + 29;
+        doc.setFontSize(8.5);
+        doc.text(cfg.ketua_rt || '____________________', centerX, nameRow2Y, { align: 'center' });
+        doc.setDrawColor(30, 41, 59);
+        doc.line(centerX - 25, nameRow2Y + 1, centerX + 25, nameRow2Y + 1);
 
         // Footer nomor halaman di setiap halaman
         const totalPages = doc.internal.getNumberOfPages();
