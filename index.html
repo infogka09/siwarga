@@ -660,6 +660,21 @@
     return sign + 'Rp ' + Math.abs(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
 
+  function formatRibuan(val, emptyIfZero) {
+    if (val === '' || val === null || val === undefined) return '';
+    const digits = String(val).replace(/[^0-9]/g, '');
+    if (!digits) return '';
+    const num = parseInt(digits, 10);
+    if (isNaN(num)) return '';
+    if (emptyIfZero && num === 0) return '';
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  function parseRibuan(val) {
+    const digits = String(val === undefined || val === null ? '' : val).replace(/[^0-9]/g, '');
+    return digits ? parseInt(digits, 10) : 0;
+  }
+
   function formatDateID(dateStr) {
     if (!dateStr) return '-';
     const s = String(dateStr).trim().substring(0, 10);
@@ -2270,6 +2285,8 @@
       else localStorage.removeItem(TOKEN_KEY);
     },
     formatRupiah: formatRupiah,
+    formatRibuan: formatRibuan,
+    parseRibuan: parseRibuan,
     formatDateID: formatDateID,
     formatDateTimeID: formatDateTimeID,
     formatPeriodeID: formatPeriodeID,
@@ -2920,7 +2937,18 @@ window.CompWarga = {
                 <div class="col-12"><q-input v-model="kkForm.alamat" outlined dense label="Alamat Lengkap" /></div>
                 <div class="col-12 col-sm-4"><q-select v-model="kkForm.status_hunian" :options="['Tetap', 'Kontrak', 'Kosong']" outlined dense label="Status Hunian" /></div>
                 <div class="col-12 col-sm-4"><q-input v-model="kkForm.no_hp" outlined dense label="No. WhatsApp / HP" /></div>
-                <div class="col-12 col-sm-4"><q-input v-model.number="kkForm.nominal_ipl" type="number" outlined dense label="Tarif IPL (Rp)" /></div>
+                <div class="col-12 col-sm-4">
+                  <q-input
+                    :model-value="formatRibuan(kkForm.nominal_ipl, true)"
+                    @update:model-value="v => kkForm.nominal_ipl = parseRibuan(v)"
+                    inputmode="numeric"
+                    prefix="Rp"
+                    placeholder="150.000"
+                    class="mono-num"
+                    outlined dense
+                    label="Tarif IPL (Rp)"
+                  />
+                </div>
                 <div class="col-12 col-sm-8"><q-input v-model="kkForm.email" type="email" outlined dense label="Email Warga (Notifikasi Verifikasi IPL)" placeholder="nama@gmail.com" /></div>
                 <div class="col-12 col-sm-4"><q-select v-model="kkForm.status_aktif" :options="['Aktif', 'Nonaktif']" outlined dense label="Status Data" /></div>
               </div>
@@ -3144,7 +3172,7 @@ window.CompWarga = {
       kkColumns, wargaColumns, filteredKk, filteredWarga, kkSelectOptions,
       detailDialog, selectedKk, selectedKkMembers, kkDialog, kkForm, wargaDialog, wargaForm,
       viewKkDetail, openKkDialog, submitKk, confirmDeleteKk, openWargaDialog, submitWarga, confirmDeleteWarga,
-      formatRupiah: SiwargaAPI.formatRupiah
+      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan
     };
   }
 };
@@ -4395,7 +4423,16 @@ window.CompFinanceIpl = {
                 label="Periode Tagihan (MM-YYYY) *"
                 :rules="[v=>!!v||'Wajib']"
               />
-              <q-input v-model.number="genForm.nominal_default" type="number" outlined dense label="Nominal Default jika KK belum punya tarif (Rp)" />
+              <q-input
+                :model-value="formatRibuan(genForm.nominal_default, true)"
+                @update:model-value="v => genForm.nominal_default = parseRibuan(v)"
+                inputmode="numeric"
+                prefix="Rp"
+                placeholder="150.000"
+                class="mono-num"
+                outlined dense
+                label="Nominal Default jika KK belum punya tarif (Rp)"
+              />
               <div class="row justify-end q-gutter-sm q-mt-md">
                 <q-btn flat label="Batal" v-close-popup />
                 <q-btn type="submit" unelevated color="teal-8" label="Buat Tagihan" :loading="saving" />
@@ -4547,8 +4584,12 @@ window.CompFinanceIpl = {
 
               <q-input
                 v-if="canManage"
-                v-model.number="rapelForm.nominal_per_bulan"
-                type="number"
+                :model-value="formatRibuan(rapelForm.nominal_per_bulan, true)"
+                @update:model-value="v => rapelForm.nominal_per_bulan = parseRibuan(v)"
+                inputmode="numeric"
+                prefix="Rp"
+                placeholder="150.000"
+                class="mono-num"
                 outlined dense
                 label="Tarif IPL per Bulan (Rp)"
                 hint="Otomatis mengikuti tarif rumah (bisa disesuaikan jika perlu)"
@@ -5502,7 +5543,7 @@ window.CompFinanceIpl = {
       openUploadDialog, onPickFile, submitUpload, openRapelDialog, filterKkSelect, filterRapelPeriodeSelect, addAllUnpaidToCustom, onSelectRapelKk, setRapelEndCurrent, setRapelEndYear, onPickRapelFile, submitRapel,
       openProofPreview, zoomProof, toggleProofZoom, rotateProof, resetProofView, copyRekening,
       buildWaMeLink, sendSingleWa, openWaBulkDialog, selectAllWa, submitWaBulk, openWaLogDialog,
-      formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID, formatPeriodsSummary: SiwargaAPI.formatPeriodsSummary
+      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, formatDateID: SiwargaAPI.formatDateID, formatPeriodeID: SiwargaAPI.formatPeriodeID, formatPeriodsSummary: SiwargaAPI.formatPeriodsSummary
     };
   }
 };
@@ -6295,7 +6336,17 @@ window.CompFinanceKas = {
                   <q-select v-model="form.metode" :options="['Tunai', 'Transfer Bank', 'QRIS']" outlined dense label="Metode" />
                 </div>
               </div>
-              <q-input v-model.number="form.nominal" type="number" outlined dense label="Nominal (Rp) *" :rules="[v=>v>0||'Nominal harus > 0']" />
+              <q-input
+                :model-value="formatRibuan(form.nominal, true)"
+                @update:model-value="v => form.nominal = parseRibuan(v)"
+                inputmode="numeric"
+                prefix="Rp"
+                placeholder="0"
+                class="mono-num"
+                outlined dense
+                label="Nominal (Rp) *"
+                :rules="[() => Number(form.nominal) > 0 || 'Nominal harus lebih dari Rp 0']"
+              />
               <q-input v-model="form.deskripsi" type="textarea" rows="3" outlined dense label="Uraian / Keterangan Transaksi *" :rules="[v=>!!v||'Wajib']" />
               <q-file v-model="uploadFile" outlined dense clearable accept=".jpg,.jpeg,.png,.webp,.pdf" label="Upload Foto Nota / Kwitansi ke Google Drive (Opsional)">
                 <template #prepend><q-icon name="receipt_long" /></template>
@@ -6687,7 +6738,7 @@ window.CompFinanceKas = {
       buktiDialog, buktiItem, buktiZoom, buktiRotate,
       onTipeChange, openForm, submitForm, deleteTx, viewBukti, zoomBukti, toggleBuktiZoom, rotateBukti, resetBuktiView,
       openKatDialog, resetKatForm, editKategori, submitKategori, toggleKategori,
-      formatRupiah: SiwargaAPI.formatRupiah, formatDateID: SiwargaAPI.formatDateID
+      formatRupiah: SiwargaAPI.formatRupiah, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, formatDateID: SiwargaAPI.formatDateID
     };
   }
 };
@@ -8041,9 +8092,29 @@ window.CompSettings = {
               <div class="col-12 col-sm-4"><q-input v-model="form.ketua_rt" outlined dense label="Nama Ketua RT" /></div>
               <div class="col-12 col-sm-4"><q-input v-model="form.sekretaris_rt" outlined dense label="Nama Sekretaris RT" /></div>
               <div class="col-12 col-sm-4"><q-input v-model="form.bendahara_rt" outlined dense label="Nama Bendahara RT" /></div>
-              <div class="col-12 col-sm-4"><q-input v-model="form.nominal_ipl_default" type="number" outlined dense label="Nominal IPL Default (Rp)" /></div>
+              <div class="col-12 col-sm-4">
+                <q-input
+                  :model-value="formatRibuan(form.nominal_ipl_default, false)"
+                  @update:model-value="v => form.nominal_ipl_default = v === '' ? '' : String(parseRibuan(v))"
+                  inputmode="numeric"
+                  prefix="Rp"
+                  class="mono-num"
+                  outlined dense
+                  label="Nominal IPL Default (Rp)"
+                />
+              </div>
               <div class="col-12 col-sm-4"><q-input v-model="form.jatuh_tempo_hari" type="number" outlined dense label="Tanggal Jatuh Tempo Tiap Bulan" /></div>
-              <div class="col-12 col-sm-4"><q-input v-model="form.saldo_awal_kas" type="number" outlined dense label="Saldo Awal Pembukuan Kas (Rp)" /></div>
+              <div class="col-12 col-sm-4">
+                <q-input
+                  :model-value="formatRibuan(form.saldo_awal_kas, false)"
+                  @update:model-value="v => form.saldo_awal_kas = v === '' ? '' : String(parseRibuan(v))"
+                  inputmode="numeric"
+                  prefix="Rp"
+                  class="mono-num"
+                  outlined dense
+                  label="Saldo Awal Pembukuan Kas (Rp)"
+                />
+              </div>
 
               <!-- Multi Rekening Kas RT -->
               <div class="col-12">
@@ -9179,7 +9250,7 @@ window.CompSettings = {
       searchUser, filterUserRole, filterUserLogin, loadingUsers, userLoginStats, filteredUsers,
       waProviderOptions, waVars, waAutoReminderBool,
       users, userColumns, userPagination, kkOptions, userDialog, userForm,
-      isLoginToday, formatLoginTime, formatDateTimeID: SiwargaAPI.formatDateTimeID, loadUsers,
+      isLoginToday, formatLoginTime, formatDateTimeID: SiwargaAPI.formatDateTimeID, formatRibuan: SiwargaAPI.formatRibuan, parseRibuan: SiwargaAPI.parseRibuan, loadUsers,
       addBankAccount, removeBankAccount, resetMenuDefaults, saveMenuConfig,
       fillDefaultWargaPwd, confirmUpgradeWargaPasswords, canLoginAs, confirmLoginAs,
       onPickLogo, resetLogo, onChangeWaProvider, appendWaVar, runTestWa,
