@@ -6326,7 +6326,7 @@ window.CompFinanceKas = {
             <div class="text-subtitle1 text-weight-bold">{{ form.id ? 'Edit Transaksi Kas' : ('Catat Kas ' + form.tipe) }}</div>
             <q-btn flat round dense icon="close" v-close-popup />
           </q-card-section>
-          <q-card-section>
+          <q-card-section style="max-height: 78vh; overflow-y: auto;">
             <q-form @submit.prevent="submitForm" class="q-gutter-sm">
               <div class="row q-col-gutter-sm">
                 <div class="col-6"><q-input v-model="form.tanggal" type="date" outlined dense label="Tanggal *" :rules="[v=>!!v||'Wajib']" /></div>
@@ -6399,9 +6399,67 @@ window.CompFinanceKas = {
                 :rules="[() => Number(form.nominal) > 0 || 'Nominal harus lebih dari Rp 0']"
               />
               <q-input v-model="form.deskripsi" type="textarea" rows="3" outlined dense label="Uraian / Keterangan Transaksi *" :rules="[v=>!!v||'Wajib']" />
-              <q-file v-model="uploadFile" outlined dense clearable accept=".jpg,.jpeg,.png,.webp,.pdf" label="Upload Foto Nota / Kwitansi ke Google Drive (Opsional)">
+              <q-file
+                v-model="uploadFile"
+                outlined dense clearable
+                accept=".jpg,.jpeg,.png,.webp,.pdf"
+                label="Upload Foto Nota / Kwitansi ke Google Drive (Opsional)"
+                @update:model-value="onPickUploadFile"
+              >
                 <template #prepend><q-icon name="receipt_long" /></template>
               </q-file>
+
+              <!-- Pratinjau File Bukti Transfer / Kwitansi Sebelum Upload -->
+              <div
+                v-if="uploadPreviewUrl || (uploadFile && uploadFile.type === 'application/pdf') || (!uploadFile && form.bukti_url)"
+                class="q-pa-sm rounded-borders bg-grey-1"
+                style="border: 1px dashed #94a3b8;"
+              >
+                <div class="row items-center justify-between q-mb-xs">
+                  <div class="text-caption text-weight-bold text-grey-8">
+                    <q-icon name="preview" size="15px" color="teal-8" class="q-mr-xs" />
+                    {{ uploadFile ? 'Pratinjau File yang Akan Diunggah' : 'Bukti Tersimpan Saat Ini' }}
+                  </div>
+                  <div class="row items-center q-gutter-xs">
+                    <span v-if="uploadFile && uploadFile.size" class="text-caption text-grey-6">
+                      {{ (uploadFile.size / 1024).toFixed(0) }} KB
+                    </span>
+                    <q-btn
+                      v-if="uploadPreviewUrl || (!uploadFile && form.bukti_url)"
+                      flat dense no-caps size="sm"
+                      color="indigo-8"
+                      icon="zoom_in"
+                      label="Perbesar"
+                      @click="previewCurrentUpload"
+                    />
+                  </div>
+                </div>
+                <div v-if="uploadPreviewUrl" class="text-center">
+                  <img
+                    :src="uploadPreviewUrl"
+                    alt="Pratinjau bukti transfer"
+                    class="cursor-pointer rounded-borders"
+                    style="max-width: 100%; max-height: 220px; object-fit: contain; border: 1px solid #e2e8f0; background: #ffffff;"
+                    @click="previewCurrentUpload"
+                  />
+                </div>
+                <div v-else-if="uploadFile && uploadFile.type === 'application/pdf'" class="row items-center q-gutter-sm q-pa-xs bg-white rounded-borders" style="border: 1px solid #e2e8f0;">
+                  <q-icon name="picture_as_pdf" color="red-7" size="28px" />
+                  <div class="col ellipsis">
+                    <div class="text-body2 text-weight-bold ellipsis">{{ uploadFile.name }}</div>
+                    <div class="text-caption text-grey-6">Dokumen PDF siap diunggah ke Google Drive</div>
+                  </div>
+                </div>
+                <div v-else-if="form.bukti_url && !form.bukti_url.endsWith('/preview')" class="text-center">
+                  <img
+                    :src="form.bukti_url"
+                    alt="Bukti tersimpan"
+                    class="cursor-pointer rounded-borders"
+                    style="max-width: 100%; max-height: 200px; object-fit: contain; border: 1px solid #e2e8f0; background: #ffffff;"
+                    @click="previewCurrentUpload"
+                  />
+                </div>
+              </div>
               <div class="row justify-end q-gutter-sm q-mt-md">
                 <q-btn flat label="Batal" v-close-popup />
                 <q-btn type="submit" unelevated :color="form.tipe === 'Masuk' ? 'positive' : 'deep-orange-7'" label="Simpan Transaksi" :loading="saving" />
@@ -6584,6 +6642,7 @@ window.CompFinanceKas = {
     const mobileLimit = ref(20);
     const dialog = ref(false);
     const uploadFile = ref(null);
+    const uploadPreviewUrl = ref('');
     const buktiDialog = ref(false);
     const buktiItem = ref({});
     const buktiZoom = ref(1);
@@ -6702,8 +6761,28 @@ window.CompFinanceKas = {
       }
     }
 
+    function onPickUploadFile(file) {
+      uploadPreviewUrl.value = '';
+      if (file && file.type && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = () => { uploadPreviewUrl.value = reader.result; };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function previewCurrentUpload() {
+      const url = uploadPreviewUrl.value || form.bukti_url || '';
+      if (!url) return;
+      viewBukti({
+        bukti_url: url,
+        deskripsi: form.deskripsi || (uploadFile.value ? uploadFile.value.name : 'Pratinjau Bukti Transfer'),
+        nominal: form.nominal || 0
+      });
+    }
+
     function openForm(tipe, row) {
       uploadFile.value = null;
+      uploadPreviewUrl.value = '';
       const defaultRek = bankSelectOptions.value.length ? bankSelectOptions.value[0].value : '';
       if (row) {
         const cloned = Object.assign({}, row);
@@ -6842,7 +6921,7 @@ window.CompFinanceKas = {
 
     return {
       canManage, loading, saving, filterTipe, filterBulan, periodeFilterOptions, search, mobileLimit,
-      columns, filteredRows, totals, dialog, form, uploadFile,
+      columns, filteredRows, totals, dialog, form, uploadFile, uploadPreviewUrl, onPickUploadFile, previewCurrentUpload,
       kategoriMasuk, kategoriKeluar, activeKategoriOptions,
       kategoriList, filteredKategoriList, katDialog, katFilterTipe, savingKat, katForm,
       buktiDialog, buktiItem, buktiZoom, buktiRotate,
