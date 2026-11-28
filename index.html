@@ -8261,29 +8261,30 @@ window.CompFinanceReport = {
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(6.3);
             doc.setTextColor(100, 116, 139);
-            const clippedSub = b.sub.length > 42 ? (b.sub.substring(0, 40) + '...') : b.sub;
+            const subLines = doc.splitTextToSize(String(b.sub), boxW - 5.2);
+            const clippedSub = subLines.length > 1 ? (subLines[0].replace(/\s+$/, '') + '...') : (subLines[0] || '');
             doc.text(clippedSub, bx + 2.8, by + 13.4);
           }
         });
 
-        // Catatan Dana Rapel Bulan Berikutnya (jika ada)
+        // Catatan Dana Rapel Bulan Berikutnya (jika ada — otomatis wrap multi-baris agar tidak keluar batas kertas)
         const boxesBottomY = boxY + boxH * 2 + gapY;
         let curY = boxesBottomY + 6.5;
         if (report.deferredFutureTotal > 0) {
-          doc.setFillColor(245, 243, 255);
-          doc.setDrawColor(221, 214, 254);
-          doc.roundedRect(margin, boxesBottomY + 2.5, contentW, 9.5, 1.5, 1.5, 'FD');
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7.5);
-          doc.setTextColor(76, 29, 149);
-          doc.text(
+          const depositNote =
             'Info Deposit IPL sebesar ' + SiwargaAPI.formatRupiah(report.deferredFutureTotal) +
             ' (' + formatFuturePeriods(report.deferredFuturePeriods) + ') yang otomatis dialokasikan pada bulan masing-masing. Total Saldo Kas Riil di Rekening sebesar: ' +
-            SiwargaAPI.formatRupiah(report.saldoKasPerPeriode || report.saldoKasRiil) + '.',
-            margin + 2.5,
-            boxesBottomY + 8.3
-          );
-          curY = boxesBottomY + 16.5;
+            SiwargaAPI.formatRupiah(report.saldoKasPerPeriode || report.saldoKasRiil) + '.';
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          const depositLines = doc.splitTextToSize(depositNote, contentW - 6);
+          const noteBoxH = Math.max(9.5, depositLines.length * 3.8 + 4.5);
+          doc.setFillColor(245, 243, 255);
+          doc.setDrawColor(221, 214, 254);
+          doc.roundedRect(margin, boxesBottomY + 2.5, contentW, noteBoxH, 1.5, 1.5, 'FD');
+          doc.setTextColor(76, 29, 149);
+          doc.text(depositLines, margin + 3, boxesBottomY + 2.5 + 4.8);
+          curY = boxesBottomY + 2.5 + noteBoxH + 5;
         }
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
